@@ -1,0 +1,377 @@
+{
+  "schema_version": "1.0.0",
+  "ticker": "AVGO",
+  "as_of": "2026-08-17",
+  "generated_at": "2026-08-18T00:15:00Z",
+  "price": 214.6,
+  "is_bar_complete": true,
+  "bar_meta": {
+    "last_bar_date": "2026-08-17",
+    "session_state": "CLOSED",
+    "is_bar_complete": true,
+    "bars_available": 756,
+    "exchange_tz": "America/New_York",
+    "volume_judgements_reliable": true
+  },
+  "regime": "RISK_ON",
+  "stage": "STAGE_2",
+  "indicators": {
+    "sma20": 205.1,
+    "sma50": 196.4,
+    "sma150": 178.25,
+    "sma200": 169.8,
+    "ema10": 209.75,
+    "ema21": 203.6,
+    "sma50_slope_10d_pct": 3.8,
+    "sma150_slope_20d_pct": 4.9,
+    "sma200_slope_20d_pct": 3.1,
+    "rsi14": 64.3,
+    "atr14": 6.85,
+    "atr_pct": 3.19,
+    "adr20_pct": 3.4,
+    "macd": 6.12,
+    "macd_signal": 4.98,
+    "macd_hist": 1.14,
+    "bb_upper": 216.4,
+    "bb_mid": 205.1,
+    "bb_lower": 193.8,
+    "bb_width_pct": 11.02,
+    "high_52w": 219.4,
+    "low_52w": 118.05,
+    "from_52w_high_pct": -2.19,
+    "above_52w_low_pct": 81.79,
+    "volume": 24180000.0,
+    "avg_volume_50": 19450000.0,
+    "volume_ratio": 1.24,
+    "dollar_volume_50": 4174000000.0,
+    "rs_percentile": 92.0,
+    "rs_line_new_high": true
+  },
+  "strategy_verdicts": [
+    {
+      "strategy_name": "minervini",
+      "strategy_version": "0.1.0",
+      "gate": {
+        "strategy": "minervini",
+        "passed": true,
+        "checks": [
+          {
+            "id": "price_above_sma150_200",
+            "label": "주가 > 150일선 & 200일선",
+            "status": "PASS",
+            "actual": 214.6,
+            "threshold": 178.25,
+            "comparator": "GT",
+            "unit": "$",
+            "reason": "주가 214.60 > 150일선 178.25 (200일선 169.80도 상회)"
+          },
+          {
+            "id": "sma150_above_sma200",
+            "label": "150일선 > 200일선",
+            "status": "PASS",
+            "actual": 178.25,
+            "threshold": 169.8,
+            "comparator": "GT",
+            "unit": "$",
+            "reason": "150일선 178.25 > 200일선 169.80"
+          },
+          {
+            "id": "sma200_trending_up",
+            "label": "200일선 상승 중 (20일)",
+            "status": "PASS",
+            "actual": 3.1,
+            "threshold": 0.0,
+            "comparator": "GT",
+            "unit": "%",
+            "reason": "200일선 20일 기울기 +3.1%"
+          },
+          {
+            "id": "sma50_above_sma150_200",
+            "label": "50일선 > 150일선 & 200일선",
+            "status": "PASS",
+            "actual": 196.4,
+            "threshold": 178.25,
+            "comparator": "GT",
+            "unit": "$",
+            "reason": "50일선 196.40 > 150일선 178.25"
+          },
+          {
+            "id": "price_above_sma50",
+            "label": "주가 > 50일선",
+            "status": "PASS",
+            "actual": 214.6,
+            "threshold": 196.4,
+            "comparator": "GT",
+            "unit": "$",
+            "reason": "주가 214.60 > 50일선 196.40 (+9.3%)"
+          },
+          {
+            "id": "above_52w_low",
+            "label": "52주 저점 대비 +30% 이상",
+            "status": "PASS",
+            "actual": 81.79,
+            "threshold": 30.0,
+            "comparator": "GTE",
+            "unit": "%",
+            "reason": "52주 저점 118.05 대비 +81.8%"
+          },
+          {
+            "id": "near_52w_high",
+            "label": "52주 고점 대비 -25% 이내",
+            "status": "PASS",
+            "actual": -2.19,
+            "threshold": -25.0,
+            "comparator": "GTE",
+            "unit": "%",
+            "reason": "52주 고점 219.40 대비 -2.2%"
+          },
+          {
+            "id": "rs_percentile",
+            "label": "RS 백분위 70 이상",
+            "status": "PASS",
+            "actual": 92.0,
+            "threshold": 70.0,
+            "comparator": "GTE",
+            "unit": null,
+            "reason": "RS 백분위 92 (유니버스 상위 8%)"
+          }
+        ],
+        "pass_count": 8,
+        "total": 8,
+        "unavailable_count": 0,
+        "required_count": null
+      },
+      "score": 90.0,
+      "max_score": 100.0,
+      "components": [
+        {
+          "id": "vcp_contraction",
+          "label": "VCP 수축 품질",
+          "earned": 22.0,
+          "max": 25.0,
+          "detail": "3회 수축, 마지막 수축폭이 첫 수축폭의 0.31배"
+        },
+        {
+          "id": "volume_dryup",
+          "label": "거래량 건조",
+          "earned": 18.0,
+          "max": 20.0,
+          "detail": "최근 5일 평균 거래량이 베이스 평균의 0.58배"
+        },
+        {
+          "id": "pivot_proximity",
+          "label": "피벗 근접도",
+          "earned": 20.0,
+          "max": 20.0,
+          "detail": "피벗 216.80까지 +1.03% — 진입 가능 구간"
+        },
+        {
+          "id": "base_length",
+          "label": "베이스 성숙도",
+          "earned": 12.0,
+          "max": 15.0,
+          "detail": "34거래일 베이스, 깊이 14.2%"
+        },
+        {
+          "id": "rs_strength",
+          "label": "상대강도",
+          "earned": 18.0,
+          "max": 20.0,
+          "detail": "RS 백분위 92, RS 라인 신고가 갱신"
+        }
+      ],
+      "setup_state": "PIVOT_READY",
+      "setup_metrics": {
+        "pivot_price": 216.8,
+        "to_pivot_ratio": 0.99,
+        "to_pivot_pct": 1.03,
+        "base_length_days": 34,
+        "base_depth_pct": 14.2,
+        "contraction_ratio": 0.31,
+        "volume_dryup_ratio": 0.58
+      },
+      "verdict": "BUY",
+      "notes": [
+        "추세 템플릿 8개 조건 전부 통과",
+        "피벗 216.80 돌파 시 진입. 돌파 거래량은 50일 평균의 1.5배 이상을 확인할 것",
+        "피벗 대비 +5% 이상에서는 EXTENDED로 전환되므로 추격 매수 금지"
+      ]
+    },
+    {
+      "strategy_name": "weinstein",
+      "strategy_version": "0.1.0",
+      "gate": {
+        "strategy": "weinstein",
+        "passed": true,
+        "checks": [
+          {
+            "id": "price_above_ma150",
+            "label": "주가 > 30주선(150일선)",
+            "status": "PASS",
+            "actual": 214.6,
+            "threshold": 178.25,
+            "comparator": "GT",
+            "unit": "$",
+            "reason": "주가 214.60 > 30주선 178.25"
+          },
+          {
+            "id": "ma150_trending_up",
+            "label": "30주선 상승 중",
+            "status": "PASS",
+            "actual": 4.9,
+            "threshold": 0.0,
+            "comparator": "GT",
+            "unit": "%",
+            "reason": "30주선 20일 기울기 +4.9%"
+          },
+          {
+            "id": "stage2_confirmed",
+            "label": "Stage 2 진행 확인",
+            "status": "PASS",
+            "actual": null,
+            "threshold": null,
+            "comparator": "BOOL",
+            "unit": null,
+            "reason": "30주선 상향 돌파 후 12주 경과, 고점·저점 절상 유지"
+          },
+          {
+            "id": "volume_confirmation",
+            "label": "돌파 거래량 확인",
+            "status": "PASS",
+            "actual": 1.24,
+            "threshold": 1.0,
+            "comparator": "GTE",
+            "unit": "x",
+            "reason": "거래량이 50일 평균의 1.24배"
+          }
+        ],
+        "pass_count": 4,
+        "total": 4,
+        "unavailable_count": 0,
+        "required_count": null
+      },
+      "score": 72.0,
+      "max_score": 85.0,
+      "components": [
+        {
+          "id": "ma_slope_quality",
+          "label": "30주선 기울기",
+          "earned": 18.0,
+          "max": 20.0,
+          "detail": "기울기 +4.9%로 견조한 상승"
+        },
+        {
+          "id": "distance_from_ma",
+          "label": "이동평균 이격도",
+          "earned": 14.0,
+          "max": 20.0,
+          "detail": "30주선 대비 +20.4% — 다소 확장됨"
+        },
+        {
+          "id": "volume_pattern",
+          "label": "거래량 패턴",
+          "earned": 16.0,
+          "max": 20.0,
+          "detail": "상승일 거래량 우위, 조정일 거래량 감소"
+        },
+        {
+          "id": "relative_strength",
+          "label": "시장 대비 강도",
+          "earned": 24.0,
+          "max": 25.0,
+          "detail": "지수 대비 3개월 초과수익 +18.2%p"
+        }
+      ],
+      "setup_state": "BREAKOUT",
+      "setup_metrics": {
+        "pivot_price": 198.4,
+        "to_pivot_ratio": 1.082,
+        "to_pivot_pct": -7.55,
+        "base_length_days": 62,
+        "base_depth_pct": 22.4,
+        "contraction_ratio": null,
+        "volume_dryup_ratio": null
+      },
+      "verdict": "BUY",
+      "notes": [
+        "Stage 2 초입은 이미 지났다. 30주선 돌파 지점 198.40 대비 +7.6% 위",
+        "미너비니 피벗(216.80)과 다른 지점을 본다 — 방법론별 진입 정의가 다르기 때문이다",
+        "만점 척도가 100이 아니라 85다. 다른 전략 점수와 직접 비교하지 말 것"
+      ]
+    }
+  ],
+  "consensus": {
+    "total_strategies": 2,
+    "verdict_counts": {
+      "BUY": 2
+    },
+    "buy_strategies": [
+      "minervini",
+      "weinstein"
+    ],
+    "gate_passed_strategies": [
+      "minervini",
+      "weinstein"
+    ],
+    "gate_progress": [
+      {
+        "strategy": "minervini",
+        "passed": true,
+        "pass_count": 8,
+        "total": 8,
+        "unavailable_count": 0,
+        "progress_ratio": 1.0
+      },
+      {
+        "strategy": "weinstein",
+        "passed": true,
+        "pass_count": 4,
+        "total": 4,
+        "unavailable_count": 0,
+        "progress_ratio": 1.0
+      }
+    ],
+    "agreement": "UNANIMOUS_BUY"
+  },
+  "risk_plan": {
+    "entry": 216.8,
+    "stop": 201.1,
+    "stop_pct": 7.24,
+    "r_per_share": 15.7,
+    "shares": 63,
+    "position_value": 13658.4,
+    "account_equity": 100000.0,
+    "risk_pct": 0.99,
+    "risk_amount": 989.1,
+    "r_levels": [
+      {
+        "multiple": 1.0,
+        "price": 232.5,
+        "suggested_action": "손절을 본전(216.80)으로 이동"
+      },
+      {
+        "multiple": 2.0,
+        "price": 248.2,
+        "suggested_action": "1/3 부분 익절, 나머지는 21일선 추격 손절로 전환"
+      },
+      {
+        "multiple": 3.0,
+        "price": 263.9,
+        "suggested_action": "추가 1/3 익절, 잔여 포지션은 50일선 이탈 시 청산"
+      }
+    ],
+    "exit_rules": [
+      "진입 후 종가 기준 201.10 이탈 시 전량 청산",
+      "돌파 실패(피벗 하회 후 3일 내 회복 실패) 시 즉시 청산",
+      "50일선 종가 이탈 시 잔여 포지션 청산"
+    ]
+  },
+  "warnings": [
+    {
+      "code": "EARNINGS_NEAR",
+      "severity": "INFO",
+      "message": "9거래일 뒤 실적 발표 예정 — 보유 중 갭 리스크를 감안할 것",
+      "field": null
+    }
+  ]
+}
