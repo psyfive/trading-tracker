@@ -18,6 +18,9 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "network: 실제 yfinance 호출. 기본 실행에서 제외되며 --run-network 로만 실행된다",
+]
 
 [tool.ruff]
 line-length = 100

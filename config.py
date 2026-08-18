@@ -10,6 +10,51 @@ frozen=True인 이유: 백테스트 파라미터 스윕에서 dataclasses.replac
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import time
+
+
+@dataclass(frozen=True)
+class MarketSession:
+    """거래소 정규장 정보. 봉 완성 여부 판정의 기준이 된다.
+
+    ticker_suffixes가 빈 튜플이면 '접미사 없는 티커'(미국)를 뜻한다.
+    """
+
+    exchange: str
+    timezone: str
+    open_time: time
+    close_time: time
+    ticker_suffixes: tuple[str, ...]
+
+
+US_EQUITY = MarketSession(
+    exchange="US",
+    timezone="America/New_York",
+    open_time=time(9, 30),
+    close_time=time(16, 0),
+    ticker_suffixes=(),
+)
+
+KRX_EQUITY = MarketSession(
+    exchange="KRX",
+    timezone="Asia/Seoul",
+    open_time=time(9, 0),
+    close_time=time(15, 30),
+    ticker_suffixes=(".KS", ".KQ"),
+)
+
+
+@dataclass(frozen=True)
+class ExchangeConfig:
+    """거래소 판정 설정.
+
+    등록되지 않은 접미사(.T, .L, .HK 등)는 판정 불가로 처리한다.
+    이때는 보수적으로 is_bar_complete=False로 두고 경고를 붙인다 —
+    모르는 거래소의 봉을 완성됐다고 단정하면 거래량 오진으로 이어진다.
+    """
+
+    sessions: tuple[MarketSession, ...] = (US_EQUITY, KRX_EQUITY)
+    settle_buffer_minutes: int = 15
 
 
 @dataclass(frozen=True)
@@ -18,9 +63,10 @@ class DataConfig:
 
     history_years: int = 3
     cache_dir: str = ".cache"
-    cache_ttl_hours: int = 12
     interval: str = "1d"
-    min_bars_required: int = 200
+    auto_adjust: bool = True
+    min_bars_absolute: int = 20
+    warn_below_bars: int = 200
     stale_data_max_days: int = 5
 
 
@@ -127,6 +173,7 @@ class AppConfig:
     """최상위 설정. main.py와 backtest/harness.py가 이것 하나만 주고받는다."""
 
     data: DataConfig = field(default_factory=DataConfig)
+    exchanges: ExchangeConfig = field(default_factory=ExchangeConfig)
     indicators: IndicatorConfig = field(default_factory=IndicatorConfig)
     regime: RegimeConfig = field(default_factory=RegimeConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)

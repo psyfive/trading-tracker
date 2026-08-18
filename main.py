@@ -8,6 +8,7 @@ python main.py AAPL --equity 100000 --risk-pct 1.0
 from __future__ import annotations
 
 import argparse
+import sys
 
 from config import AppConfig
 from core.types import DiagnosisReport
@@ -22,7 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("ticker", help="진단할 티커. 예: AAPL")
     parser.add_argument("--json", action="store_true", help="rich 대신 JSON 출력")
-    parser.add_argument("--equity", type=float, default=None, help="계좌 평가금액 (포지션 사이징용)")
+    parser.add_argument(
+        "--equity", type=float, default=None, help="계좌 평가금액 (포지션 사이징용)"
+    )
     parser.add_argument("--risk-pct", type=float, default=None, help="트레이드당 감수 리스크 %%")
     parser.add_argument("--no-cache", action="store_true", help="parquet 캐시 무시")
     parser.add_argument(
@@ -46,8 +49,20 @@ def diagnose(ticker: str, config: AppConfig, strategies: list[Strategy]) -> Diag
     raise NotImplementedError
 
 
-def main() -> int:
-    raise NotImplementedError
+def main(argv: list[str] | None = None) -> int:
+    """CLI 진입점.
+
+    Phase 1 시점에는 데이터 수집과 지표 산출까지만 구현되어 있다.
+    인자 파싱은 동작하므로 --help는 정상이고, 실제 진단은 Phase 2에서 붙는다.
+    """
+    args = build_parser().parse_args(argv)
+    print(
+        f"[Phase 1] 데이터/지표 레이어까지 구현됨. "
+        f"'{args.ticker}' 진단 파이프라인은 Phase 2에서 붙는다.",
+        file=sys.stderr,
+    )
+    print("지표 값 확인: python scripts/verify_phase1.py", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

@@ -5,16 +5,24 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (2026-08-18)
+## 현재 상태 (Phase 1 완료)
 
-스캐폴딩 + 데이터 계약만 확정된 상태다.
+계약 + 데이터 레이어 + 지표까지 구현됐다. **전략/게이트/점수는 아직 없다.**
 
-- **구현 완료**: `core/types.py` (전체 데이터 계약), `config.py` (임계값 dataclass),
-  `tests/test_types_contract.py` + `tests/test_examples.py` (계약 불변식 91개 테스트),
-  `examples/` (프론트엔드용 목업 JSON 3종)
-- **시그니처만**: 그 외 모든 모듈. 본문은 `raise NotImplementedError`.
-- **미설치 의존성**: `pandas`, `yfinance`, `pyarrow`, `rich`. 설치 전에는
-  `core.types` / `config` 외 모듈은 import되지 않는다. `pip install -r requirements.txt`.
+- **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
+- **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
+  `data/fetcher.py`, `tests/fixtures/` 고정 CSV 2종
+- **미구현**: `strategies/`, `regime/`, `risk/`, `backtest/`, `render/`,
+  `data/universe.py`(RS는 Phase 3.5), `main.py`의 진단 파이프라인
+- `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+
+### 테스트는 네트워크를 타지 않는다
+
+`tests/conftest.py`의 `_block_network`가 `yfinance.download`를 예외로 바꾼다.
+실수로 네트워크를 타는 테스트가 들어오면 즉시 실패한다.
+실제 수집 경로는 `tests/test_fetcher_network.py`에 격리되어 있고 `--run-network`로만 돈다.
+
+픽스처 갱신이 필요할 때만 사람이 `python scripts/make_fixtures.py`를 실행한다.
 
 ## 아키텍처 원칙
 
