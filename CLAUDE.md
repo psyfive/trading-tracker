@@ -5,16 +5,38 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 1 완료)
+## 현재 상태 (Phase 2 완료)
 
-계약 + 데이터 레이어 + 지표까지 구현됐다. **전략/게이트/점수는 아직 없다.**
+계약 + 데이터 + 지표 + 백테스트 하네스까지 구현됐다. **진짜 전략은 아직 없다.**
 
 - **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
   `data/fetcher.py`, `tests/fixtures/` 고정 CSV 2종
-- **미구현**: `strategies/`, `regime/`, `risk/`, `backtest/`, `render/`,
+- **Phase 2 (하네스)**: `backtest/harness.py`, `strategies/base.py`(템플릿 메서드),
+  `strategies/dummy.py`(검증용 더미 3종), `core/context.py`
+- **미구현**: `strategies/minervini.py` 등 진짜 전략, `regime/`, `risk/`, `render/`,
   `data/universe.py`(RS는 Phase 3.5), `main.py`의 진단 파이프라인
 - `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+
+### 전략을 만들기 전에 자를 먼저 만들었다
+
+`strategies/dummy.py`의 더미 3종은 **결과가 미리 예측되는** 전략이다.
+하네스를 고칠 때마다 `python scripts/verify_phase2.py`로 예측이 여전히 맞는지 확인한다.
+예측이 어긋나면 전략이 아니라 하네스를 의심한다.
+
+  - `AlwaysBuy` -> buy-and-hold와 초과수익 정확히 0
+  - `Random` -> 초과수익이 2 표준오차 안
+  - `PerfectHindsight` -> look-ahead 감사에 적발
+
+### look-ahead 방지는 두 겹이다
+
+1. **구조적**: 시점 t의 `StockContext`에는 `df.iloc[:t+1]`만 들어간다. 미래 봉이
+   객체 안에 없으므로 실수로는 볼 수 없다. `_assert_point_in_time()`이 매 호출 직전 재확인한다.
+2. **행위 감사**: 미래를 보려면 `requires_full_history` 뒷문으로 주입받아야 하고,
+   `audit_lookahead()`가 시점별 재현으로 이를 적발한다 — 전체 데이터가 있을 때와
+   t에서 잘렸을 때의 판정이 다르면 미래를 쓴 것이다.
+
+진입가는 **시그널 다음 봉 시가**다. 시그널 봉의 종가로 사는 것은 그 종가를 미리 아는 것이다.
 
 ### 테스트는 네트워크를 타지 않는다
 

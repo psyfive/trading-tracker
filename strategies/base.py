@@ -14,6 +14,7 @@ from core.context import StockContext
 from core.types import (
     GateResult,
     ScoreComponent,
+    SetupMetrics,
     SetupState,
     StrategyVerdict,
     Verdict,
@@ -78,10 +79,51 @@ class StrategyBase(ABC):
         """게이트 통과 종목의 최종 판정과 근거 메모. 반환: (verdict, notes)."""
         ...
 
+    def build_setup_metrics(self, ctx: StockContext) -> SetupMetrics:
+        """전략별 셋업 수치. 기본은 비어 있다.
+
+        피벗/베이스 정의가 전략마다 다르므로 IndicatorSnapshot이 아니라 여기서 채운다.
+        """
+        return SetupMetrics()
+
     def evaluate(self, ctx: StockContext) -> StrategyVerdict:
-        """템플릿 메서드. 오버라이드 금지.
+        """템플릿 메서드. **오버라이드 금지.**
 
         게이트 탈락 시 build_score()를 호출하지 않고 즉시 REJECTED_BY_GATE를 반환한다.
         score=None이지 0.0이 아니다 ('채점 안 함' != '낮은 점수').
         """
-        raise NotImplementedError
+        gate = self.build_gate(ctx)
+
+        if gate.strategy != self.name:
+            raise ValueError(
+                f"GateResult.strategy({gate.strategy!r})가 전략명({self.name!r})과 다르다"
+            )
+
+        if not gate.passed:
+            return StrategyVerdict(
+                strategy_name=self.name,
+                strategy_version=self.version,
+                gate=gate,
+                verdict=Verdict.REJECTED_BY_GATE,
+                setup_state=SetupState.NO_SETUP,
+                notes=[
+                    f"게이트 {gate.pass_count}/{gate.total} 통과 — 채점하지 않았다",
+                ],
+            )
+
+        score, max_score, components = self.build_score(ctx)
+        setup = self.detect_setup(ctx)
+        verdict, notes = self.decide(ctx, score, max_score, components, setup)
+
+        return StrategyVerdict(
+            strategy_name=self.name,
+            strategy_version=self.version,
+            gate=gate,
+            score=score,
+            max_score=max_score,
+            components=components,
+            setup_state=setup,
+            setup_metrics=self.build_setup_metrics(ctx),
+            verdict=verdict,
+            notes=notes,
+        )

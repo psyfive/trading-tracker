@@ -169,11 +169,35 @@ class QullamaggieConfig:
 
 
 @dataclass(frozen=True)
+class BacktestConfig:
+    """백테스트 하네스 설정.
+
+    entry_offset_bars=1: 시그널이 난 봉의 **다음 봉 시가**로 진입한다.
+    시그널 봉의 종가로 사는 것은 종가를 미리 아는 것이므로 look-ahead다.
+    """
+
+    horizons: tuple[int, ...] = (20, 60)
+    entry_offset_bars: int = 1
+    warmup_bars: int = 200
+    score_buckets: tuple[tuple[float, float], ...] = (
+        (0.0, 40.0),
+        (40.0, 60.0),
+        (60.0, 70.0),
+        (70.0, 85.0),
+        (85.0, 100.0),
+    )
+    min_sample_size: int = 30
+    lookahead_audit_samples: int = 12
+    strict_lookahead: bool = True
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """최상위 설정. main.py와 backtest/harness.py가 이것 하나만 주고받는다."""
 
     data: DataConfig = field(default_factory=DataConfig)
     exchanges: ExchangeConfig = field(default_factory=ExchangeConfig)
+    backtest: BacktestConfig = field(default_factory=BacktestConfig)
     indicators: IndicatorConfig = field(default_factory=IndicatorConfig)
     regime: RegimeConfig = field(default_factory=RegimeConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
