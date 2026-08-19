@@ -254,6 +254,11 @@ def show_entry_distribution(result: PanelResult) -> None:
         f"종목당 평균 {result.signals.n / max(len(entries), 1):.1f}건 — "
         "미너비니는 선별적인 방법론이라 종목 하나로는 표본이 모이지 않는다.[/dim]"
     )
+    if result.skipped_tickers:
+        console.print(
+            f"  [yellow]봉 부족으로 제외 {len(result.skipped_tickers)}개: "
+            f"{', '.join(result.skipped_tickers)}[/yellow]"
+        )
 
 
 def show_score_buckets(result: PanelResult) -> None:

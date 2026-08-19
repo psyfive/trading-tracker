@@ -1,33 +1,45 @@
-"""examples/ 목업 JSON이 계약을 통과하는지 검증한다.
+"""examples/ 예시 JSON — 계약 준수 + **구현과의 일치**를 검증한다.
 
-이 테스트의 목적은 두 가지다:
-  1. 프론트엔드에 건네는 목업이 실제 스키마와 어긋나지 않게 잠근다.
-  2. 계약을 바꿨을 때 조기 경보를 울린다 — 목업이 먼저 깨진다.
+이 테스트의 목적은 세 가지다:
 
-값 자체는 합성 데이터이므로 시세의 정확성은 검증하지 않는다.
-검증하는 것은 '이 모양의 JSON이 계약상 유효한가'와 '각 파일이 의도한 상태를 실제로 담고 있는가'다.
+  1. 프론트엔드에 건네는 예시가 스키마와 어긋나지 않게 잠근다.
+  2. 계약을 바꿨을 때 조기 경보를 울린다 — 예시가 먼저 깨진다.
+  3. 예시가 **현재 구현의 실제 출력**인지 확인한다.
+
+3번이 Phase 4 리뷰에서 추가된 이유: 1~2번은 **형태**만 본다. 손으로 채운 목업은
+스키마를 통과하면서도 존재하지 않는 게이트 체크 id, 구현이 금지한 게이트 구성,
+발생 불가능한 시나리오를 담을 수 있었고 실제로 그렇게 됐다. 이제 예시는
+`scripts/make_examples.py`가 실제 전략으로 생성하며, 여기서 같은 (티커, as_of)를
+다시 평가해 파일과 대조한다. 어긋나면 재생성하라고 말해 준다.
+
+값 자체(가격·점수)는 픽스처에서 나온 실측이므로 '시세가 맞는가'는 검증 대상이 아니다.
+검증하는 것은 '이 파일이 계약상 유효하고, 의도한 상태를 담고 있으며, 구현의 출력과
+같은가'다.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from core.types import (
     SCHEMA_VERSION,
-    Agreement,
     CheckStatus,
     DiagnosisReport,
     SessionState,
-    SetupState,
     Verdict,
     WarningCode,
 )
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+ROOT = Path(__file__).resolve().parent.parent
+EXAMPLES_DIR = ROOT / "examples"
 SAMPLE_FILES = ["sample_buy.json", "sample_gate_reject.json", "sample_incomplete_bar.json"]
+
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
 
 
 def load(name: str) -> DiagnosisReport:
@@ -72,85 +84,174 @@ def test_rejected_verdicts_never_carry_a_score(name):
             assert verdict.components == []
 
 
+@pytest.mark.parametrize("name", SAMPLE_FILES)
+def test_every_sample_covers_all_three_strategies(name):
+    """예시는 프론트가 보고 개발하는 문서다. 구현된 전략이 전부 등장해야 한다."""
+    names = [v.strategy_name for v in load(name).strategy_verdicts]
+    assert names == ["minervini", "weinstein", "qullamaggie"]
+
+
+@pytest.mark.parametrize("name", SAMPLE_FILES)
+def test_every_sample_carries_the_survivorship_warning(name):
+    """RS 백분위를 실은 리포트는 생존편향 경고를 함께 실어야 한다."""
+    codes = {w.code for w in load(name).warnings}
+    assert WarningCode.RS_UNIVERSE_MISSING in codes
+
+
+@pytest.mark.parametrize("name", SAMPLE_FILES)
+def test_risk_plan_is_absent_until_the_planner_exists(name):
+    """risk/planner.py가 없다. 계산 주체 없는 값을 예시가 지어내면 그것이 곧 거짓 문서다."""
+    assert load(name).risk_plan is None
+
+
 # ---------------------------------------------------------------------------
-# sample_buy.json
+# 예시가 현재 구현의 출력인가 (드리프트 차단)
 # ---------------------------------------------------------------------------
 
 
-def test_buy_sample_has_full_minervini_gate():
-    report = load("sample_buy.json")
-    gate = verdict_of(report, "minervini").gate
-    assert (gate.pass_count, gate.total) == (8, 8)
-    assert gate.passed is True
+@pytest.fixture(scope="module")
+def market():
+    import make_examples
+
+    return make_examples.load_market()
 
 
-def test_buy_sample_is_pivot_ready_and_risk_on():
-    report = load("sample_buy.json")
-    assert report.regime.value == "RISK_ON"
-    assert verdict_of(report, "minervini").setup_state is SetupState.PIVOT_READY
+@pytest.mark.parametrize(
+    ("name", "complete"),
+    [
+        ("sample_buy.json", True),
+        ("sample_gate_reject.json", True),
+        ("sample_incomplete_bar.json", False),
+    ],
+)
+def test_sample_matches_the_current_implementation_output(name, complete, market):
+    """같은 (티커, as_of)를 지금 구현으로 다시 평가하면 파일과 한 글자도 다르지 않아야 한다.
 
+    시나리오 탐색(패널 전수 스캔)은 여기서 하지 않는다 — 파일에 적힌 시점을 재현하는
+    것만으로 '내용이 구현과 어긋났는가'는 충분히 잡힌다.
+    """
+    import make_examples
 
-def test_buy_sample_is_unanimous():
-    report = load("sample_buy.json")
-    assert report.consensus.agreement is Agreement.UNANIMOUS_BUY
-    assert report.consensus.verdict_counts[Verdict.BUY] == 2
-
-
-def test_buy_sample_strategies_use_different_max_scores():
-    """서로 다른 척도임을 목업이 직접 보여준다 — 평균내면 안 되는 이유."""
-    report = load("sample_buy.json")
-    assert verdict_of(report, "minervini").max_score == 100.0
-    assert verdict_of(report, "weinstein").max_score == 85.0
-
-
-def test_buy_sample_strategies_disagree_on_pivot():
-    """같은 차트를 두 방법론이 다른 피벗으로 읽는다. 그래서 지표가 아니라 setup_metrics다."""
-    report = load("sample_buy.json")
-    assert (
-        verdict_of(report, "minervini").setup_metrics.pivot_price
-        != verdict_of(report, "weinstein").setup_metrics.pivot_price
+    report = load(name)
+    payload = make_examples.payload_for_date(
+        market, report.ticker, report.as_of, complete=complete
+    )
+    assert payload == (EXAMPLES_DIR / name).read_text(encoding="utf-8"), (
+        f"{name}이 구현 출력과 다르다 — python scripts/make_examples.py 로 재생성할 것"
     )
 
 
-def test_buy_sample_risk_plan_r_levels_are_ascending():
-    plan = load("sample_buy.json").risk_plan
-    assert plan is not None
-    assert [level.multiple for level in plan.r_levels] == [1.0, 2.0, 3.0]
-    assert plan.stop < plan.entry < plan.r_levels[0].price
+def test_gate_check_ids_in_samples_exist_in_the_implementation(market):
+    """예시의 게이트 체크 id가 실제 구현이 내는 id와 같아야 한다 (죽은 id 회귀 방지)."""
+    import make_examples
+
+    report = load("sample_buy.json")
+    position = int(
+        market["frames"][report.ticker].index.get_indexer([str(report.as_of)])[0]
+    )
+    df = market["frames"][report.ticker]
+    from config import DEFAULT_CONFIG
+    from data.universe import rs_percentile_series
+    from regime.market import stage_series
+
+    ctx = make_examples.context_at(
+        report.ticker,
+        df,
+        position,
+        regimes=market["regimes"],
+        stages=stage_series(df, DEFAULT_CONFIG.regime),
+        rs=rs_percentile_series(report.ticker, market["percentiles"]),
+    )
+    live = {v.strategy_name: [c.id for c in v.gate.checks] for v in make_examples.evaluate(ctx)}
+    sampled = {v.strategy_name: [c.id for c in v.gate.checks] for v in report.strategy_verdicts}
+    assert sampled == live
 
 
 # ---------------------------------------------------------------------------
-# sample_gate_reject.json
+# sample_buy.json — 세 전략이 모두 살 만하다고 본 시점
 # ---------------------------------------------------------------------------
 
 
-def test_reject_sample_fails_exactly_one_check():
+def test_buy_sample_actually_contains_a_buy():
+    report = load("sample_buy.json")
+    assert report.consensus.buy_strategies
+    assert report.consensus.agreement.value != "NONE"
+
+
+def test_buy_sample_gate_passers_have_scores():
+    for verdict in load("sample_buy.json").strategy_verdicts:
+        if verdict.gate.passed:
+            assert verdict.score is not None
+            assert verdict.max_score is not None
+
+
+def test_buy_sample_strategies_use_different_max_scores():
+    """서로 다른 척도임을 예시가 직접 보여준다 — 평균내면 안 되는 이유."""
+    max_scores = {v.strategy_name: v.max_score for v in load("sample_buy.json").strategy_verdicts}
+    assert len(set(max_scores.values())) > 1
+
+
+def test_buy_sample_strategies_read_the_same_chart_differently():
+    """같은 차트를 세 방법론이 서로 다른 베이스 구조로 읽는다.
+
+    피벗 값은 우연히 같을 수 있다(같은 스윙 고점을 골랐을 때). 정의가 다르다는 사실은
+    베이스 길이·깊이에서 드러난다 — 그래서 이 값들이 지표가 아니라 setup_metrics다.
+    """
+    lengths = {
+        v.strategy_name: v.setup_metrics.base_length_days
+        for v in load("sample_buy.json").strategy_verdicts
+    }
+    assert len(set(lengths.values())) == 3
+
+
+def test_buy_sample_shows_every_setup_detail_variant():
+    """스키마 1.2.0의 판별 유니온을 프론트가 어떻게 분기하는지 보여주는 참조 샘플."""
+    kinds = {
+        v.setup_metrics.detail.kind
+        for v in load("sample_buy.json").strategy_verdicts
+        if v.setup_metrics.detail is not None
+    }
+    assert kinds == {"minervini", "weinstein", "qullamaggie"}
+
+
+def test_buy_sample_reports_the_breakout_volume_it_would_require():
+    """돌파 거래량은 BUY의 필요조건이므로 그 수치가 근거로 실려야 한다."""
+    for verdict in load("sample_buy.json").strategy_verdicts:
+        detail = verdict.setup_metrics.detail
+        assert detail is not None
+        assert detail.breakout_volume_ratio is not None
+
+
+# ---------------------------------------------------------------------------
+# sample_gate_reject.json — 같은 종목, 전략마다 다른 자
+# ---------------------------------------------------------------------------
+
+
+def test_reject_sample_has_a_gate_rejection_without_a_score():
+    rejected = [
+        v
+        for v in load("sample_gate_reject.json").strategy_verdicts
+        if v.verdict is Verdict.REJECTED_BY_GATE
+    ]
+    assert rejected
+    assert all(v.score is None and v.max_score is None for v in rejected)
+
+
+def test_reject_sample_contains_a_near_miss():
+    """한 조건만 모자란 종목이야말로 워치리스트에 올려야 하는 대상이다."""
+    near = [
+        v
+        for v in load("sample_gate_reject.json").strategy_verdicts
+        if not v.gate.passed and v.gate.pass_count == v.gate.total - 1
+    ]
+    assert near
+
+
+def test_reject_sample_splits_the_strategies():
+    """같은 차트를 한 전략은 통과시키고 다른 전략은 탈락시킨다 — 나란히 두는 이유."""
     report = load("sample_gate_reject.json")
-    gate = verdict_of(report, "minervini").gate
-    assert (gate.pass_count, gate.total) == (7, 8)
-    assert [c.id for c in gate.failed_checks] == ["above_52w_low"]
-
-
-def test_reject_sample_failure_is_the_52w_low_condition():
-    report = load("sample_gate_reject.json")
-    check = verdict_of(report, "minervini").gate.failed_checks[0]
-    assert check.actual == 19.14
-    assert check.threshold == 30.0
-    assert check.status is CheckStatus.FAIL
-
-
-def test_reject_sample_minervini_score_is_none():
-    verdict = verdict_of(load("sample_gate_reject.json"), "minervini")
-    assert verdict.verdict is Verdict.REJECTED_BY_GATE
-    assert verdict.score is None
-    assert verdict.max_score is None
-
-
-def test_reject_sample_verdicts_are_split():
-    report = load("sample_gate_reject.json")
-    assert report.consensus.agreement is Agreement.SPLIT
-    assert verdict_of(report, "weinstein").verdict is Verdict.BUY
-    assert verdict_of(report, "canslim").verdict is Verdict.REJECTED_BY_GATE
+    passed = {v.gate.passed for v in report.strategy_verdicts}
+    assert passed == {True, False}
 
 
 def test_reject_sample_gate_progress_is_sortable():
@@ -159,25 +260,28 @@ def test_reject_sample_gate_progress_is_sortable():
     ranked = sorted(
         report.consensus.gate_progress, key=lambda g: g.progress_ratio, reverse=True
     )
-    assert [g.strategy for g in ranked] == ["weinstein", "minervini", "canslim"]
+    assert ranked[0].progress_ratio >= ranked[-1].progress_ratio
+    assert {g.strategy for g in ranked} == {
+        v.strategy_name for v in report.strategy_verdicts
+    }
 
 
-def test_reject_sample_same_rs_passes_one_strategy_and_fails_another():
-    """RS 74가 미너비니(70)는 통과, CANSLIM(80)은 탈락. 임계값이 전략별로 산다."""
+def test_reject_sample_same_indicator_passes_one_strategy_and_fails_another():
+    """RS 임계값이 전략별로 산다 (미너비니 70 / 와인스타인 50 / Qullamaggie 80)."""
     report = load("sample_gate_reject.json")
-    minervini_rs = next(
-        c for c in verdict_of(report, "minervini").gate.checks if c.id == "rs_percentile"
-    )
-    canslim_rs = next(
-        c for c in verdict_of(report, "canslim").gate.checks if c.id == "rs_percentile"
-    )
-    assert minervini_rs.actual == canslim_rs.actual == 74.0
-    assert minervini_rs.status is CheckStatus.PASS
-    assert canslim_rs.status is CheckStatus.FAIL
+    statuses = {}
+    actuals = set()
+    for verdict in report.strategy_verdicts:
+        check = next((c for c in verdict.gate.checks if c.id == "rs_percentile"), None)
+        if check is not None and check.actual is not None:
+            statuses[verdict.strategy_name] = check.status
+            actuals.add(check.actual)
+    assert len(actuals) == 1, "같은 지표값이어야 임계값 차이를 보여준다"
+    assert set(statuses.values()) == {CheckStatus.PASS, CheckStatus.FAIL}
 
 
 # ---------------------------------------------------------------------------
-# sample_incomplete_bar.json
+# sample_incomplete_bar.json — BUY 시점과 같은 봉, 미완성이라는 사실 하나만 다르다
 # ---------------------------------------------------------------------------
 
 
@@ -193,42 +297,52 @@ def test_incomplete_sample_carries_the_required_warning():
     assert any(w.code is WarningCode.INCOMPLETE_BAR for w in report.warnings)
 
 
-def test_incomplete_sample_marks_volume_check_unavailable_not_failed():
-    """핵심: 데이터 없음이 조건 미달로 둔갑하지 않았는지."""
-    gate = verdict_of(load("sample_incomplete_bar.json"), "qullamaggie").gate
-    assert [c.id for c in gate.unavailable_checks] == ["breakout_volume_ratio"]
-    assert gate.failed_checks == []
-    assert gate.unavailable_count == 1
-    assert gate.passed is False
-
-
-def test_incomplete_sample_unavailable_check_has_no_actual_value():
-    check = verdict_of(load("sample_incomplete_bar.json"), "qullamaggie").gate.unavailable_checks[0]
-    assert check.actual is None
-    assert check.threshold == 1.5
+def test_incomplete_sample_is_the_same_bar_as_the_buy_sample():
+    """두 파일이 같은 봉이어야 '봉 완성 여부만으로 판정이 바뀐다'를 보여줄 수 있다."""
+    buy, incomplete = load("sample_buy.json"), load("sample_incomplete_bar.json")
+    assert (buy.ticker, buy.as_of, buy.price) == (
+        incomplete.ticker,
+        incomplete.as_of,
+        incomplete.price,
+    )
 
 
 def test_incomplete_sample_reduces_max_score_instead_of_scoring_zero():
     """채점 불가 항목은 0점 처리가 아니라 만점에서 제외한다."""
-    verdict = verdict_of(load("sample_incomplete_bar.json"), "minervini")
-    assert verdict.max_score == 80.0
-    assert sum(c.max for c in verdict.components) == 80.0
-    assert all(c.id != "volume_dryup" for c in verdict.components)
+    buy, incomplete = load("sample_buy.json"), load("sample_incomplete_bar.json")
+    for verdict in incomplete.strategy_verdicts:
+        if verdict.max_score is None:
+            continue
+        complete_verdict = verdict_of(buy, verdict.strategy_name)
+        assert verdict.max_score < complete_verdict.max_score
+        assert sum(c.max for c in verdict.components) == verdict.max_score
+
+
+def test_incomplete_sample_drops_only_the_volume_components():
+    """빠진 항목이 거래량 항목이어야 한다 — 다른 항목이 사라지면 채점이 망가진 것이다."""
+    buy, incomplete = load("sample_buy.json"), load("sample_incomplete_bar.json")
+    for verdict in incomplete.strategy_verdicts:
+        if verdict.max_score is None:
+            continue
+        dropped = {c.id for c in verdict_of(buy, verdict.strategy_name).components} - {
+            c.id for c in verdict.components
+        }
+        assert dropped
+        assert all("volume" in component_id for component_id in dropped)
 
 
 def test_incomplete_sample_withholds_buy():
-    """게이트 8/8이어도 거래량 확인 없이는 BUY를 내지 않는다."""
+    """거래량 확인 없이 BUY를 내지 않는다 — 게이트를 전부 통과했더라도."""
     report = load("sample_incomplete_bar.json")
-    assert verdict_of(report, "minervini").verdict is Verdict.WATCH
     assert report.consensus.buy_strategies == []
-    assert report.consensus.agreement is Agreement.NONE
+    assert all(v.verdict is not Verdict.BUY for v in report.strategy_verdicts)
 
 
-def test_incomplete_sample_leaves_volume_dryup_ratio_none():
-    metrics = verdict_of(load("sample_incomplete_bar.json"), "minervini").setup_metrics
-    assert metrics.detail is not None
-    assert metrics.detail.volume_dryup_ratio is None
-    assert metrics.detail.contraction_ratio == 0.42
+def test_incomplete_sample_explains_itself_in_the_notes():
+    """왜 BUY가 아닌지가 사용자에게 문장으로 남아야 한다."""
+    for verdict in load("sample_incomplete_bar.json").strategy_verdicts:
+        if verdict.gate.passed:
+            assert any("거래량" in note for note in verdict.notes)
 
 
 # ---------------------------------------------------------------------------
@@ -238,18 +352,17 @@ def test_incomplete_sample_leaves_volume_dryup_ratio_none():
 
 def test_failed_checks_carry_a_normalized_shortfall():
     """프론트가 comparator 방향을 해석하지 않고도 '얼마나 모자랐나'를 알 수 있어야 한다."""
-    report = load("sample_gate_reject.json")
-    failed = verdict_of(report, "minervini").gate.failed_checks[0]
-    assert failed.id == "above_52w_low"
-    assert failed.shortfall_pct == pytest.approx(36.2, abs=0.1)
-
-
-def test_shortfall_distinguishes_near_miss_from_far_miss():
-    """근접도 정렬의 핵심 — 같은 7/8 탈락이라도 미달 폭이 다르면 구분돼야 한다."""
-    report = load("sample_gate_reject.json")
-    minervini_miss = verdict_of(report, "minervini").gate.failed_checks[0].shortfall_pct
-    canslim_miss = verdict_of(report, "canslim").gate.failed_checks[0].shortfall_pct
-    assert canslim_miss < minervini_miss, "CANSLIM RS 74 vs 80이 더 근소해야 한다"
+    failures = [
+        check
+        for name in SAMPLE_FILES
+        for verdict in load(name).strategy_verdicts
+        for check in verdict.gate.failed_checks
+    ]
+    assert failures, "탈락 조건이 하나도 없으면 이 성질을 보여주지 못한다"
+    assert any(check.shortfall_pct is not None for check in failures)
+    for check in failures:
+        if check.shortfall_pct is not None:
+            assert check.shortfall_pct > 0.0
 
 
 def test_passing_checks_have_no_shortfall():
@@ -260,22 +373,10 @@ def test_passing_checks_have_no_shortfall():
                     assert check.shortfall_pct is None, f"{name}/{check.id}"
 
 
-def test_setup_detail_is_tagged_by_strategy():
-    """프론트는 detail.kind로 분기한다. 모르는 kind는 무시하면 된다."""
-    detail = verdict_of(load("sample_buy.json"), "minervini").setup_metrics.detail
-    assert detail is not None
-    assert detail.kind == "minervini"
-    assert detail.contraction_count == 3
-
-
-def test_setup_detail_is_optional():
-    """detail은 없어도 된다. 프론트는 null을 반드시 처리해야 한다.
-
-    목업의 와인스타인 판정은 detail 없이 공통 코어(피벗/베이스)만 채운 예다 —
-    전략이 자기 어휘를 아직 정하지 않았거나 채울 값이 없을 때의 모습이다.
-    (구현된 `strategies/weinstein.py`는 WeinsteinSetup을 채운다. 이 목업은 계약의
-    허용 범위를 보여주는 손으로 채운 예시이지 구현의 스냅샷이 아니다.)
-    """
-    weinstein = verdict_of(load("sample_buy.json"), "weinstein").setup_metrics
-    assert weinstein.detail is None
-    assert weinstein.pivot_price is not None, "공통 코어(피벗)는 채울 수 있어야 한다"
+def test_unavailable_checks_never_fabricate_a_derived_threshold():
+    """확인 못 한 조건에 기준값 0.0을 실으면 프론트가 '기준 > 0.00'을 그린다."""
+    for name in SAMPLE_FILES:
+        for verdict in load(name).strategy_verdicts:
+            for check in verdict.gate.unavailable_checks:
+                assert check.actual is None
+                assert check.threshold != 0.0

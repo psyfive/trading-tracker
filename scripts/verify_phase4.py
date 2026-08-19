@@ -316,6 +316,13 @@ def show_panel_results(market: str, results: dict[str, list[PanelResult]]) -> No
         "  [dim]|초과%| > 2SE↑ 이면 어느 가정에서도 유의하고, < 2SE↓ 이면 어느 가정에서도 "
         "유의하지 않다. 그 사이면 결론을 유보한다.[/dim]"
     )
+    # 봉이 모자라 평가조차 못 한 종목은 분모에서 빠진다. 그 사실이 표에 보이지 않으면
+    # '29종목 패널'이라는 말이 조용히 거짓이 된다.
+    skipped = sorted({t for results_ in results.values() for t in results_[0].skipped_tickers})
+    if skipped:
+        console.print(
+            f"  [yellow]봉 부족으로 제외된 종목 {len(skipped)}개: {', '.join(skipped)}[/yellow]"
+        )
 
 
 def show_score_buckets(market: str, results: dict[str, list[PanelResult]]) -> None:

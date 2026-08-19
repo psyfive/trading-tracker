@@ -6,7 +6,7 @@
 **"이미 크게 오른 종목이 지금 쉬고 있는가."** 급등 이력이 없는 종목은 추세가 아무리
 곱게 정렬돼 있어도 대상이 아니다. 그래서 게이트 5조건이 이렇게 구성된다:
 
-  직전 급등(prior move) / 변동성(ADR) / 유동성(거래대금) / RS / 20일선 위
+  직전 급등(prior move) / 변동성(ADR) / 유동성(거래대금) / RS / EMA21 위
 
 ADR과 거래대금이 게이트에 있는 것이 이 전략의 특징이다. 변동성이 없으면 목표 수익이
 나올 수 없고, 거래대금이 없으면 그 수익을 실현할 수 없다 — 둘 다 가산점이 아니라
@@ -19,6 +19,14 @@ ADR과 거래대금이 게이트에 있는 것이 이 전략의 특징이다. �
 측정 창(prior_move_lookback_days)만큼의 과거가 없으면 **None이고 게이트는 UNAVAILABLE**이다 —
 짧은 데이터로 계산한 작은 상승률을 '급등 없음(FAIL)'으로 단정하면 신규 상장주가
 조용히 탈락한다.
+
+## 돌파 거래량은 BUY의 필요조건이다
+
+이 방법론도 '컨솔 상단 돌파'를 사는 방식이고, 돌파에는 거래량이 따라야 한다.
+채점에 있던 것은 컨솔 구간의 **건조도**(dryup)뿐이라 '조용히 조여든 정도'만 쟀다 —
+그것은 돌파 확인이 아니다. BREAKOUT 상태에서는 breakout_volume_ratio를 이진 조건으로
+요구한다. 게이트에 넣지 않는 이유는 게이트가 '자격 요건'(급등·변동성·유동성·RS·추세)이고
+돌파 거래량은 그 뒤의 타이밍 문제이기 때문이다.
 
 ## 미너비니와 피벗 정의가 다르다
 
@@ -48,7 +56,16 @@ from core.types import (
     Verdict,
 )
 from indicators.core import swing_positions
-from strategies.base import StrategyBase, build_gate_check, build_gate_result
+from strategies.base import (
+    StrategyBase,
+    build_gate_check,
+    build_gate_result,
+    decay_score,
+    memoize_per_context,
+)
+from strategies.base import (
+    breakout_volume_ratio as recent_volume_ratio,
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +85,7 @@ class Consolidation:
     prior_move_pct: float | None
     consolidation_avg_volume: float | None
     recent_avg_volume: float | None
+    breakout_volume_ratio: float | None
 
     @property
     def volume_dryup_ratio(self) -> float | None:
@@ -130,24 +148,27 @@ def detect_consolidation(ctx: StockContext, config: QullamaggieConfig) -> Consol
         prior_move_pct=prior_move_pct,
         consolidation_avg_volume=float(consolidation["volume"].mean()),
         recent_avg_volume=float(consolidation["volume"].iloc[-recent_span:].mean()),
+        # 건조도(컨솔 평균 대비)와 달리 돌파 거래량은 **50일 평균 대비**다.
+        # 같은 분모를 쓰면 조용한 컨솔일수록 돌파가 쉬워지는 역전이 생긴다.
+        breakout_volume_ratio=recent_volume_ratio(
+            consolidation["volume"], ctx.indicators.avg_volume_50, recent_span
+        ),
     )
-
-
-def _decay(value: float, ideal: float, worst: float) -> float:
-    """ideal 이하면 1.0, worst 이상이면 0.0, 사이는 선형. 작을수록 좋은 값에 쓴다."""
-    if worst <= ideal:
-        return 1.0 if value <= ideal else 0.0
-    return max(0.0, min(1.0, (worst - value) / (worst - ideal)))
 
 
 class QullamaggieStrategy(StrategyBase):
     """급등 후 컨솔리데이션 돌파."""
 
     name = "qullamaggie"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def __init__(self, config: QullamaggieConfig) -> None:
         self.config = config
+
+    @memoize_per_context
+    def _consolidation(self, ctx: StockContext) -> Consolidation | None:
+        """이 ctx의 컨솔리데이션. evaluate() 한 번에 네 번 탐지하던 것을 한 번으로 줄인다."""
+        return detect_consolidation(ctx, self.config)
 
     # -----------------------------------------------------------------
     # GATE — 자격 요건. 전부 이진 필터다.
@@ -157,7 +178,7 @@ class QullamaggieStrategy(StrategyBase):
         cfg = self.config
         ind = ctx.indicators
         price = ctx.price
-        consolidation = detect_consolidation(ctx, cfg)
+        consolidation = self._consolidation(ctx)
 
         def threshold_check(
             check_id: str,
@@ -273,13 +294,15 @@ class QullamaggieStrategy(StrategyBase):
             ),
         ]
 
-        # 5. 20일선 위 — 컨솔 중에도 추세가 살아 있어야 한다
+        # 5. EMA21 위 — 컨솔 중에도 추세가 살아 있어야 한다.
+        #    라벨에 '20일선'이라고 쓰지 않는다: 계약 필드는 ema21이고 값도 21기간 EMA다.
+        #    화면에서 20일 이동평균으로 오독되면 사용자가 다른 선을 보고 검증하게 된다.
         ema = ind.ema21
         if ema is None:
             checks.append(
                 build_gate_check(
                     id="price_above_ema21",
-                    label="주가 > 20일선(EMA21)",
+                    label="주가 > EMA21",
                     status=CheckStatus.UNAVAILABLE,
                     comparator=Comparator.GT,
                     reason="EMA21 미산출 — 상장 기간이 짧다",
@@ -290,7 +313,7 @@ class QullamaggieStrategy(StrategyBase):
             checks.append(
                 build_gate_check(
                     id="price_above_ema21",
-                    label="주가 > 20일선(EMA21)",
+                    label="주가 > EMA21",
                     status=CheckStatus.PASS if passed else CheckStatus.FAIL,
                     actual=round(price, 4),
                     threshold=round(ema, 4),
@@ -312,12 +335,12 @@ class QullamaggieStrategy(StrategyBase):
     def build_score(self, ctx: StockContext) -> tuple[float, float, list[ScoreComponent]]:
         cfg = self.config
         ind = ctx.indicators
-        consolidation = detect_consolidation(ctx, cfg)
+        consolidation = self._consolidation(ctx)
         components: list[ScoreComponent] = []
 
         # 1. 컨솔 타이트함 — 얕게 조일수록 손절이 가까워진다
         if consolidation is not None:
-            quality = _decay(
+            quality = decay_score(
                 consolidation.depth_pct,
                 cfg.ideal_consolidation_depth_pct,
                 cfg.max_consolidation_depth_pct,
@@ -340,7 +363,7 @@ class QullamaggieStrategy(StrategyBase):
         ema_fast = ind.ema10
         if ema_fast:
             distance_pct = abs(ctx.price - ema_fast) / ema_fast * 100.0
-            quality = _decay(distance_pct, cfg.ideal_ma_distance_pct, cfg.max_ma_distance_pct)
+            quality = decay_score(distance_pct, cfg.ideal_ma_distance_pct, cfg.max_ma_distance_pct)
             components.append(
                 ScoreComponent(
                     id="ma_proximity",
@@ -392,7 +415,7 @@ class QullamaggieStrategy(StrategyBase):
         # 5. 거래량 건조 — 미완성 봉이면 채점하지 않는다 (0점이 아니라 만점에서 제외)
         dryup = consolidation.volume_dryup_ratio if consolidation is not None else None
         if ctx.volume_reliable and dryup is not None:
-            quality = _decay(dryup, cfg.ideal_volume_dryup_ratio, 1.0)
+            quality = decay_score(dryup, cfg.ideal_volume_dryup_ratio, cfg.max_volume_dryup_ratio)
             components.append(
                 ScoreComponent(
                     id="volume_dryup",
@@ -412,7 +435,7 @@ class QullamaggieStrategy(StrategyBase):
 
     def detect_setup(self, ctx: StockContext) -> SetupState:
         cfg = self.config
-        consolidation = detect_consolidation(ctx, cfg)
+        consolidation = self._consolidation(ctx)
         if consolidation is None or consolidation.pivot_price <= 0:
             return SetupState.NO_SETUP
 
@@ -435,7 +458,7 @@ class QullamaggieStrategy(StrategyBase):
         return SetupState.BASE_FORMING
 
     def build_setup_metrics(self, ctx: StockContext) -> SetupMetrics:
-        consolidation = detect_consolidation(ctx, self.config)
+        consolidation = self._consolidation(ctx)
         ema_fast = ctx.indicators.ema10
         ma_distance_pct = (
             round((ctx.price - ema_fast) / ema_fast * 100.0, 4) if ema_fast else None
@@ -463,12 +486,36 @@ class QullamaggieStrategy(StrategyBase):
                     if consolidation.volume_dryup_ratio is not None
                     else None
                 ),
+                breakout_volume_ratio=(
+                    round(consolidation.breakout_volume_ratio, 4)
+                    if consolidation.breakout_volume_ratio is not None
+                    else None
+                ),
             ),
         )
 
     # -----------------------------------------------------------------
     # DECIDE
     # -----------------------------------------------------------------
+
+    def _breakout_volume_note(self, consolidation: Consolidation | None) -> tuple[bool, str]:
+        """돌파 거래량 확인 결과와 근거 한 줄. 반환: (확인됨, 메모).
+
+        비율을 낼 수 없으면 **확인 실패**다. 확인 못 한 조건을 충족으로 치지 않는다.
+        """
+        required = self.config.breakout_volume_ratio
+        ratio = consolidation.breakout_volume_ratio if consolidation is not None else None
+        if ratio is None:
+            return False, (
+                "돌파 거래량을 확인할 수 없다 (50일 평균 거래량 미산출) — "
+                "확인되지 않은 돌파는 사지 않는다"
+            )
+        if ratio < required:
+            return False, (
+                f"돌파 거래량이 50일 평균의 {ratio:.2f}배 — 기준 {required:.1f}배 미달. "
+                "거래량 없는 돌파는 사지 않는다"
+            )
+        return True, f"돌파 거래량 {ratio:.2f}배 (기준 {required:.1f}배 이상) 확인"
 
     def decide(
         self,
@@ -505,6 +552,19 @@ class QullamaggieStrategy(StrategyBase):
                     *notes,
                     "거래량 확인 없이 BUY를 내지 않는다 — 장 마감 후 재평가",
                 ]
+
+            # 돌파 거래량 — 돌파가 일어난 뒤에만 확인 가능한 조건이다.
+            if setup is SetupState.BREAKOUT:
+                confirmed, volume_note = self._breakout_volume_note(self._consolidation(ctx))
+                if not confirmed:
+                    return Verdict.WATCH, [*notes, volume_note]
+                notes.append(volume_note)
+            else:
+                notes.append(
+                    "돌파 전이다 — 컨솔 상단 돌파 시 거래량이 50일 평균의 "
+                    f"{cfg.breakout_volume_ratio:.1f}배 이상인지 확인해야 한다"
+                )
+
             if score_pct >= cfg.buy_min_score_pct:
                 return Verdict.BUY, [
                     *notes,

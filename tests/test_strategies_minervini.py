@@ -428,3 +428,109 @@ def test_price_below_sma50_produces_a_nonzero_shortfall():
     assert failing.status is CheckStatus.FAIL
     assert failing.shortfall_pct is not None
     assert failing.shortfall_pct > 0.0
+
+
+# ===========================================================================
+# 돌파 거래량 / 베이스 깊이 — BUY의 필요조건 (리뷰 B1)
+# ===========================================================================
+
+
+def breakout_frame(volume_multiple: float = 1.0) -> pd.DataFrame:
+    """베이스를 돌파한 시계열. 돌파 구간(최근 2k봉)의 거래량을 배수로 지정한다."""
+    df = uptrend_with_base()
+    base = detect_base(context(df), MINERVINI)
+    assert base is not None
+
+    pushed = df.copy()
+    price = base.pivot_price * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    span = MINERVINI.swing_fractal_k * 2
+    column = pushed.columns.get_loc("volume")
+    pushed.iloc[-span:, column] = pushed["volume"].iloc[-span:] * volume_multiple
+    return pushed
+
+
+def test_breakout_without_volume_is_not_a_buy():
+    """거래량 없는 돌파는 사지 않는다 — 미너비니 방법론의 필요조건."""
+    verdict = strategy().evaluate(context(breakout_frame(volume_multiple=1.0)))
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 거래량" in note for note in verdict.notes)
+
+
+def test_breakout_with_volume_can_be_a_buy():
+    """같은 차트라도 돌파 거래량이 실리면 판정이 달라져야 한다.
+
+    타이밍 점수 기준을 낮춘 이유는 이 테스트가 **거래량 조건만** 보기 때문이다.
+    돌파 거래량을 키우면 '거래량 건조' 항목 점수는 오히려 내려간다 — 두 항목이
+    같은 방향을 보지 않는 것은 정상이며(건조는 돌파 전, 확인은 돌파 시점),
+    그 상호작용까지 이 테스트에 섞으면 무엇이 판정을 갈랐는지 알 수 없게 된다.
+    """
+    verdict = strategy(buy_min_score_pct=50.0).evaluate(
+        context(breakout_frame(volume_multiple=8.0))
+    )
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_breakout_volume_threshold_comes_from_config():
+    """기준을 올리면 같은 거래량이 미달이 된다. 하드코딩이면 이 테스트가 깨진다."""
+    df = breakout_frame(volume_multiple=8.0)
+
+    def verdict_with(ratio: float):
+        return strategy(breakout_volume_ratio=ratio, buy_min_score_pct=50.0).evaluate(context(df))
+
+    assert verdict_with(1.5).verdict is Verdict.BUY
+    assert verdict_with(99.0).verdict is Verdict.WATCH
+
+
+def test_breakout_volume_ratio_is_reported_in_setup_metrics():
+    """판정의 근거가 된 수치는 계약에 실려야 한다 (프론트가 다시 계산하지 않도록)."""
+    detail = strategy().evaluate(context(breakout_frame(8.0))).setup_metrics.detail
+    assert detail is not None
+    assert detail.breakout_volume_ratio is not None
+    assert detail.breakout_volume_ratio >= MINERVINI.breakout_volume_ratio
+
+
+def test_deep_base_is_not_bought_even_at_the_pivot():
+    """베이스 깊이 상한은 config에 있는 값이지 장식이 아니다."""
+    df = breakout_frame(volume_multiple=8.0)
+    shallow_cap = strategy(max_base_depth_pct=0.01).evaluate(context(df))
+    assert shallow_cap.gate.passed is True
+    assert shallow_cap.verdict is Verdict.WATCH
+    assert any("깊이" in note for note in shallow_cap.notes)
+
+
+def test_pivot_ready_says_volume_must_be_confirmed_on_the_breakout():
+    """돌파 전에는 확인할 거래량이 없다 — 대신 무엇을 확인해야 하는지 남긴다."""
+    verdict = strategy().evaluate(context(uptrend_with_base()))
+    if verdict.setup_state is SetupState.PIVOT_READY:
+        assert any("돌파 시 거래량" in note for note in verdict.notes)
+
+
+# ===========================================================================
+# UNAVAILABLE 체크의 threshold — 0.0을 지어내지 않는다 (리뷰 E1)
+# ===========================================================================
+
+
+def test_unavailable_derived_threshold_is_none_not_zero():
+    """기준값이 이동평균(파생값)인 조건은 산출 전에 실을 값이 없다.
+
+    0.0을 넣으면 프론트가 comparator+threshold로 "기준 > 0.00"을 그리게 된다.
+    """
+    verdict = strategy().evaluate(context(uptrend_with_base().tail(60)))
+    derived = {"price_above_sma150_200", "sma150_above_sma200", "sma50_above_sma150_200",
+               "price_above_sma50"}
+    for check in verdict.gate.checks:
+        if check.id in derived and check.status is CheckStatus.UNAVAILABLE:
+            assert check.threshold is None, check.id
+
+
+def test_unavailable_constant_threshold_is_still_reported():
+    """반대로 기준값이 config 상수면 확인 못 해도 기준은 존재한다 — 그대로 싣는다."""
+    verdict = strategy().evaluate(context(uptrend_with_base(), rs=None))
+    rs_check = next(c for c in verdict.gate.checks if c.id == "rs_percentile")
+    assert rs_check.status is CheckStatus.UNAVAILABLE
+    assert rs_check.threshold == MINERVINI.min_rs_percentile

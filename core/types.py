@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.3.0"
 
 # progress_ratio 대조 허용 오차 (DiagnosisReport validator에서 사용).
 # 목업/조립 코드가 소수 4자리로 반올림해도 통과하되 (2/3 -> 0.6667, 오차 3.3e-5),
@@ -65,9 +65,14 @@ class MarketRegime(StrEnum):
 
 
 class Stage(StrEnum):
-    """와인스타인 Stage Analysis 국면."""
+    """와인스타인 Stage Analysis 국면.
 
-    STAGE_1 = "STAGE_1"      # 바닥 다지기 / 무관심 구간
+    일봉 150선 근사로 판정한다(regime/market.py). STAGE_1은 '이동평균 아래 + 이동평균이
+    가파르게 하락하지는 않음'이므로 **상승 추세 중의 눌림목도 여기로 떨어진다**.
+    '바닥'으로 단정해 읽지 말 것 — 렌더러도 그렇게 표기하지 않는다.
+    """
+
+    STAGE_1 = "STAGE_1"      # 이동평균 아래 (바닥 다지기 또는 상승 추세의 눌림목)
     STAGE_2 = "STAGE_2"      # 상승 추세 — 유일한 매수 구간
     STAGE_3 = "STAGE_3"      # 천장 다지기 / 분산
     STAGE_4 = "STAGE_4"      # 하락 추세
@@ -331,6 +336,10 @@ class MinerviniSetup(Contract):
     volume_dryup_ratio: Ratio | None = Field(
         default=None, description="거래량 건조도. 최근 평균거래량 / 베이스 평균거래량"
     )
+    breakout_volume_ratio: Ratio | None = Field(
+        default=None,
+        description="돌파 구간 최대 거래량 / 50일 평균. BUY의 필요조건이므로 근거로 함께 싣는다",
+    )
 
 
 class WeinsteinSetup(Contract):
@@ -378,6 +387,10 @@ class QullamaggieSetup(Contract):
     )
     volume_dryup_ratio: Ratio | None = Field(
         default=None, description="컨솔 후반 평균거래량 / 컨솔 평균거래량"
+    )
+    breakout_volume_ratio: Ratio | None = Field(
+        default=None,
+        description="돌파 구간 최대 거래량 / 50일 평균. BUY의 필요조건이므로 근거로 함께 싣는다",
     )
 
 
@@ -520,7 +533,14 @@ class IndicatorSnapshot(Contract):
     rs_percentile: float | None = Field(
         default=None, ge=0.0, le=100.0, description="유니버스 내 순위 0~100"
     )
-    rs_line_new_high: bool | None = None
+    # MISSING-BY-DESIGN: 현재 어떤 프로덕션 경로도 이 값을 채우지 않는다 (항상 None).
+    # 산출 함수(data/universe.rs_line_new_high_series)는 있지만 호출부가 없고, 구현된
+    # 전략 3종 중 이 값을 쓰는 전략도 없다. RS 라인 신고가가 실제 판정에 들어가는 것은
+    # CANSLIM이므로 그 Phase에서 연결한다. 그때까지 프론트는 None만 본다.
+    rs_line_new_high: bool | None = Field(
+        default=None,
+        description="RS 라인이 lookback 신고가인지. CANSLIM Phase 전까지는 항상 None",
+    )
 
     # 베이스/피벗 구조는 여기 없다 -> StrategyVerdict.setup_metrics
     # 전략마다 정의가 다르므로 지표가 아니다.

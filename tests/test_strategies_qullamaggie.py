@@ -347,3 +347,84 @@ def test_gate_checks_report_the_measured_value_not_the_threshold():
     assert checks["price_above_ema21"].actual == pytest.approx(ctx.price)
     assert checks["price_above_ema21"].threshold == pytest.approx(ctx.indicators.ema21)
     assert checks["adr_pct"].actual == pytest.approx(ctx.indicators.adr20_pct, abs=1e-4)
+
+
+# ===========================================================================
+# 돌파 거래량 — BUY의 필요조건 (리뷰 B1)
+# ===========================================================================
+
+
+def breakout_frame(volume_multiple: float = 1.0) -> pd.DataFrame:
+    """컨솔 상단을 돌파한 시계열. 돌파 구간(최근 2k봉)의 거래량을 배수로 지정한다."""
+    df = surge_then_consolidation()
+    consolidation = detect_consolidation(context(df), QULLA)
+    assert consolidation is not None
+
+    pushed = df.copy()
+    price = consolidation.pivot_price * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    span = QULLA.swing_fractal_k * 2
+    column = pushed.columns.get_loc("volume")
+    pushed.iloc[-span:, column] = pushed["volume"].iloc[-span:] * volume_multiple
+    return pushed
+
+
+def test_breakout_without_volume_is_not_a_buy():
+    """컨솔 건조도는 '조용히 조였는가'이지 '돌파를 확인했는가'가 아니다."""
+    verdict = strategy().evaluate(context(breakout_frame(volume_multiple=1.0)))
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 거래량" in note for note in verdict.notes)
+
+
+def test_breakout_with_volume_can_be_a_buy():
+    verdict = strategy(buy_min_score_pct=50.0).evaluate(
+        context(breakout_frame(volume_multiple=6.0))
+    )
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_breakout_volume_threshold_comes_from_config():
+    df = breakout_frame(volume_multiple=6.0)
+
+    def verdict_with(ratio: float):
+        return strategy(breakout_volume_ratio=ratio, buy_min_score_pct=50.0).evaluate(context(df))
+
+    assert verdict_with(1.5).verdict is Verdict.BUY
+    assert verdict_with(99.0).verdict is Verdict.WATCH
+
+
+def test_breakout_volume_ratio_is_reported_in_setup_metrics():
+    detail = strategy().evaluate(context(breakout_frame(6.0))).setup_metrics.detail
+    assert detail is not None
+    assert detail.breakout_volume_ratio is not None
+
+
+def test_volume_dryup_worst_case_comes_from_config():
+    """'컨솔 평균과 같으면 0점'은 판정 기준이지 항등원이 아니다 — config에서 온다."""
+    # 건조도가 이상(0.7)과 최악(1.0) 사이에 오도록 컨솔 후반 거래량을 올린다.
+    # 양 극단에 있으면 어떤 worst 값을 넣어도 점수가 같아 테스트가 아무것도 잠그지 못한다.
+    df = surge_then_consolidation()
+    span = QULLA.swing_fractal_k * 2
+    column = df.columns.get_loc("volume")
+    df.iloc[-span:, column] = df["volume"].iloc[-span:] * 1.5
+
+    lenient = strategy(max_volume_dryup_ratio=5.0)
+    strict = strategy(max_volume_dryup_ratio=QULLA.ideal_volume_dryup_ratio)
+
+    def dryup(strat):
+        components = strat.build_score(context(df))[2]
+        return next(c.earned for c in components if c.id == "volume_dryup")
+
+    assert dryup(lenient) > dryup(strict)
+
+
+def test_ema21_is_not_labelled_as_a_20_day_line():
+    """계약 필드는 ema21이다. 라벨만 '20일선'이면 화면에서 다른 선을 보고 검증하게 된다."""
+    verdict = strategy().evaluate(context(surge_then_consolidation()))
+    check = next(c for c in verdict.gate.checks if c.id == "price_above_ema21")
+    assert "20일선" not in check.label
+    assert "EMA21" in check.label

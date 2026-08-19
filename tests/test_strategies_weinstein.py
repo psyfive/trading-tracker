@@ -26,6 +26,7 @@ from core.types import (
     Stage,
     Verdict,
 )
+from regime.market import classify_stage
 from strategies.weinstein import WeinsteinStrategy, detect_range, stage2_age_days
 
 WEINSTEIN = DEFAULT_CONFIG.weinstein
@@ -390,3 +391,91 @@ def test_failed_rs_check_reports_a_normalized_shortfall():
     assert check.status is CheckStatus.FAIL
     # |25 - 50| / 50 * 100 = 50.0
     assert check.shortfall_pct == pytest.approx(50.0)
+
+
+# ===========================================================================
+# 돌파 거래량 — BUY의 필요조건 (리뷰 B1)
+# ===========================================================================
+
+
+def breakout_frame(volume_multiple: float = 1.0) -> pd.DataFrame:
+    """저항선을 돌파한 시계열. 돌파 구간(최근 2k봉)의 거래량을 배수로 지정한다."""
+    df = uptrend_with_range()
+    trading_range = detect_range(context(df), WEINSTEIN)
+    assert trading_range is not None
+
+    pushed = df.copy()
+    price = trading_range.resistance * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    span = WEINSTEIN.swing_fractal_k * 2
+    column = pushed.columns.get_loc("volume")
+    pushed.iloc[-span:, column] = pushed["volume"].iloc[-span:] * volume_multiple
+    return pushed
+
+
+def test_breakout_without_volume_is_not_a_buy():
+    """'와인스타인의 돌파는 거래량이 조건'이라는 문구를 로직이 실제로 지켜야 한다."""
+    verdict = strategy().evaluate(context(breakout_frame(volume_multiple=1.0)))
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 거래량" in note for note in verdict.notes)
+
+
+def test_breakout_with_volume_can_be_a_buy():
+    verdict = strategy().evaluate(context(breakout_frame(volume_multiple=5.0)))
+    assert verdict.setup_state is SetupState.BREAKOUT
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_breakout_volume_requirement_comes_from_config():
+    df = breakout_frame(volume_multiple=5.0)
+    assert strategy().evaluate(context(df)).verdict is Verdict.BUY
+    assert strategy(volume_confirm_ratio=99.0).evaluate(context(df)).verdict is Verdict.WATCH
+
+
+def test_high_score_cannot_replace_the_missing_breakout_volume():
+    """다른 항목이 만점이어도 거래량 0점을 메워 BUY가 되면 안 된다 (채점만으로는 못 막는다)."""
+    verdict = strategy().evaluate(context(breakout_frame(volume_multiple=1.0), rs=100.0))
+    assert verdict.score is not None
+    assert verdict.verdict is not Verdict.BUY
+
+
+# ===========================================================================
+# Stage 신선도 — Stage 판정과 같은 자를 쓴다 (리뷰 M1, E2)
+# ===========================================================================
+
+
+def test_stage2_age_uses_the_same_rule_as_the_stage_classifier():
+    """게이트의 Stage(주입값)와 신선도가 세는 Stage 2가 같은 조건식이어야 한다."""
+    df = uptrend_with_range()
+    ctx = context(df)
+    age = stage2_age_days(ctx, WEINSTEIN)
+    assert age is not None
+    # 마지막 봉이 Stage 2라면 age >= 1, 아니라면 0이어야 한다.
+    assert (classify_stage(df, DEFAULT_CONFIG.regime) is Stage.STAGE_2) == (age >= 1)
+
+
+def test_stage2_age_is_capped_and_does_not_scan_the_whole_history():
+    """계산 창이 상수로 묶여야 백테스트가 O(n^2)로 되돌아가지 않는다."""
+    long_uptrend = frame([100.0 + i * 0.5 for i in range(900)])
+    age = stage2_age_days(context(long_uptrend), WEINSTEIN)
+    assert age == WEINSTEIN.max_stage2_age_days
+
+
+def test_stage2_age_cap_does_not_change_the_freshness_score():
+    """상한에서 자른 값이든 그 이상이든 신선도는 0점이다 — 정보 손실이 없다."""
+    strict = strategy(max_stage2_age_days=WEINSTEIN.max_stage2_age_days)
+    long_uptrend = frame([100.0 + i * 0.5 for i in range(900)])
+    _, _, components = strict.build_score(context(long_uptrend))
+    freshness = next(c for c in components if c.id == "stage_freshness")
+    assert freshness.earned == 0.0
+
+
+def test_stage_parameters_cannot_drift_from_the_regime_config():
+    """스윕에서 한쪽만 바꾸면 화면의 Stage와 점수의 Stage가 갈라진다 — 즉시 터져야 한다."""
+    with pytest.raises(ValueError, match="Stage"):
+        replace(DEFAULT_CONFIG, weinstein=replace(WEINSTEIN, ma_period_daily=100))
+    with pytest.raises(ValueError, match="Stage"):
+        replace(DEFAULT_CONFIG, weinstein=replace(WEINSTEIN, stage_flat_slope_pct=0.0))

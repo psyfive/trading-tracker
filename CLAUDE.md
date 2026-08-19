@@ -5,11 +5,11 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 4 완료)
+## 현재 상태 (Phase 4 + 리뷰 반영 완료)
 
-계약(v1.2.0) + 데이터 + 지표 + 하네스 + **전략 3종** + 유니버스 RS까지 구현됐다.
+계약(v1.3.0) + 데이터 + 지표 + 하네스 + **전략 3종** + 유니버스 RS까지 구현됐다.
 
-- **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
+- **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/`
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
   `data/fetcher.py`, 고정 CSV 픽스처
 - **Phase 2 (하네스)**: `backtest/harness.py`, `strategies/base.py`(템플릿 메서드),
@@ -19,7 +19,11 @@
   다종목 패널 집계(`evaluate_panel`), 지표 사전 계산
 - **Phase 4 (전략 2종 추가)**: `strategies/weinstein.py`, `strategies/qullamaggie.py`,
   스키마 1.2.0(`WeinsteinSetup` / `QullamaggieSetup`), 프랙탈 스윙 지표 공유
-- **미구현**: CANSLIM(재무 데이터 필요), `risk/planner.py`, `render/`,
+- **Phase 4 리뷰 반영** (`docs/review_phase3-4.md`): 돌파 거래량을 BUY의 필요조건으로,
+  베이스 깊이 상한 적용, 스키마 1.3.0(`breakout_volume_ratio`를 미너비니·Qullamaggie
+  detail에 추가), RS 백분위 규약 통일, `core/report.py`(리포트 조립),
+  `scripts/make_examples.py`(예시 자동 생성)
+- **미구현**: CANSLIM(재무 데이터 필요), `risk/planner.py`, `render/cli.py`의 렌더링,
   `main.py`의 진단 파이프라인
 - `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
 
@@ -32,16 +36,38 @@
 |---|---|---|
 | minervini | 이동평균 8개 조건이 정렬됐는가 | 8 |
 | weinstein | Stage 2인가 + 10주선/국면/RS/유동성 | 5 |
-| qullamaggie | 직전 급등이 있었는가 + ADR/거래대금/RS/20일선 | 5 |
+| qullamaggie | 직전 급등이 있었는가 + ADR/거래대금/RS/EMA21 | 5 |
 
-`us_large` 패널 실측 진입률은 minervini 0.5% / weinstein 8.7% / qullamaggie 0.3%다.
+`us_large` 패널 실측 진입률은 minervini 0.2% / weinstein 5.0% / qullamaggie 0.3%다
+(표본 3종목 기준. 돌파 거래량 조건을 넣기 전에는 0.5% / 8.7% / 0.3%였다).
 게이트가 자주 열리는 전략은 무조건부 매수에 수렴하며, 그때 초과수익이 0 근처로
-나오는 것은 결함이 아니라 정합성 신호다 (와인스타인 20봉 초과수익 -0.28%p).
+나오는 것은 결함이 아니라 정합성 신호다 (와인스타인 20봉 초과수익 -0.76%p).
 
 **함의 관계인 조건을 중복해서 세지 말 것.** 와인스타인 게이트에 '30주선 위'와
 '30주선 상승'을 다시 넣으면 Stage 2가 이미 함의하는 사실을 세 번 세게 되어
 `pass_count/total` 진행률이 부풀고 워치리스트 근접도 정렬이 낙관 쪽으로 틀어진다.
 `tests/test_strategies_weinstein.py`가 이 설계를 잠근다.
+
+### 돌파 거래량은 BUY의 필요조건이다 (세 전략 공통)
+
+세 방법론 모두 '돌파를 산다'고 말하고, 원전 모두 돌파 거래량 확인을 요구한다.
+그런데 채점 항목으로만 두면 거래량 0점이어도 다른 항목이 그 자리를 메워 BUY가 나온다 —
+Phase 4까지가 실제로 그 상태였다 (와인스타인은 "돌파는 거래량이 조건이다"라는 문구를
+출력하면서 강제하지 않았고, 미너비니의 `breakout_volume_ratio`는 참조 0곳의 죽은 config였다).
+
+지금은 **`decide()`의 이진 조건**이다. 게이트가 아니라 decide인 이유: 게이트는 추세·국면·
+자격 요건을 묻는 자리이고, 돌파 거래량은 그 뒤의 셋업·타이밍 문제다.
+
+- 확인 대상은 `setup_state is BREAKOUT`일 때뿐이다. PIVOT_READY는 아직 돌파가 없어
+  확인할 대상 자체가 없으므로 notes에 "돌파 시 무엇을 확인해야 하는지"를 남긴다.
+  **현재 BUY의 대부분은 PIVOT_READY다** — 이 조건은 돌파 진입만 거른다.
+- 비율을 낼 수 없으면(50일 평균 거래량 미산출) **확인 실패**로 본다. 확인 못 한 조건을
+  충족으로 치지 않는다 (게이트의 UNAVAILABLE 정책과 같은 방향).
+- 계산은 `strategies/base.py`의 `breakout_volume_ratio()` 하나다 (최근 2k봉 최대 거래량 /
+  50일 평균). 값은 `SetupMetrics.detail.breakout_volume_ratio`로 계약에 실린다 —
+  판정을 가른 수치는 근거로 보여야 한다.
+- 미너비니는 여기에 더해 **베이스 깊이 상한**(`max_base_depth_pct`)을 BUY의 필요조건으로
+  둔다. 깊은 베이스는 돌파해도 사지 않는다. 셋업 판정 자체는 그대로 수행한다.
 
 ### 프랙탈 스윙은 지표다 (전략 3종이 공유한다)
 
@@ -58,7 +84,10 @@
 미너비니는 선별적이라 종목 하나당 3년에 5~24건밖에 진입하지 않는다.
 `evaluate_panel()`이 여러 종목의 **원본 Outcome을 합쳐** 다시 요약한다 —
 종목별 요약을 평균내면 표본이 적은 종목에 과한 가중치가 실린다.
-US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
+US 29종목 풀링으로 진입 166건, KOSPI 10종목으로 35건이 모인다
+(돌파 거래량 조건 추가 전에는 320건 / 74건이었다).
+봉이 모자라 평가하지 못한 티커는 조용히 사라지지 않고 `PanelResult.skipped_tickers`에 남는다 —
+분모가 줄어든 사실이 안 보이면 '29종목 패널'이라는 말이 거짓이 된다.
 
 ### 지표는 시계열로 한 번만 계산한다
 
@@ -90,6 +119,17 @@ US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
   BOOL 조건은 `actual`/`threshold`를 비우고 `Comparator.BOOL`을 쓴다.
 - 새 전략의 시점 정합성은 `tests/test_strategies_lookahead.py`에 한 줄 추가해 잠근다.
   전략별 단위 테스트의 결정론 검사만으로는 시점이 달라졌을 때의 흔들림을 못 잡는다.
+  (감사는 미국·KOSPI 픽스처 2종목에서 돈다. 시장이 하나면 통화 스케일·거래일이 다른
+  경로가 검사되지 않는다.)
+- 탐지(베이스·거래범위·컨솔)는 `@memoize_per_context`를 붙인 메서드로 감싸 한 번만
+  계산한다. evaluate() 한 번에 네 번씩 같은 탐지를 돌리던 낭비를 막는다. 캐시 키는
+  **ctx 객체의 신원**이어야 한다 — 값(티커·날짜·길이)으로 키를 만들면 look-ahead 감사의
+  두 패스가 캐시를 공유해 위반이 사라진 것처럼 보인다.
+- 점수 정규화는 `strategies/base.py`의 `decay_score` / `scaled_score`를 쓴다. 전략마다
+  복사하면 같은 '이상/최악' 표현이 전략별로 다른 곡선이 된다.
+- 전체 히스토리를 훑는 계산을 전략에 두지 않는다. 백테스트는 시점마다 evaluate를 부르므로
+  창이 상수로 묶이지 않으면 그 전략만 O(n^2)로 되돌아간다 (와인스타인 `stage2_age_days`가
+  실제로 그랬고, 지금은 `max_stage2_age_days`에서 잘라 상수 창으로 계산한다).
 
 ### 전략을 만들기 전에 자를 먼저 만들었다
 
@@ -117,6 +157,10 @@ US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
   거래일이 다른 시장을 섞으면 서로 다른 날짜를 비교하게 된다.
 - 구성종목이 `min_universe_size` 미만인 날짜는 백분위를 내지 않는다 (해상도 부족).
 - 유니버스에 없는 종목은 `rs_percentile_against()`로 유니버스 분포 대비 순위를 낸다.
+- **규약은 strictly-less 비율 하나다**: 백분위 = (자기보다 점수가 낮은 종목 수) / n * 100.
+  구성종목 경로가 `rank(pct=True)`를 쓰면 최하위가 0이 아니라 100/n에서 시작해
+  비구성종목 경로보다 계통적으로 후해지고, 게이트 경계(70/80)에 걸린 종목의 판정이
+  '유니버스 소속 여부'로 뒤집힌다. `tests/test_universe.py`가 두 경로의 일치를 잠근다.
 - **생존편향은 제거하지 못했다.** 목록이 현재 상장 종목만 담기 때문이다.
   `survivorship_warning()`을 리포트에 반드시 실을 것.
 
@@ -184,6 +228,11 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 - 백테스트 파라미터 스윕 대상이므로 `frozen=True` + `dataclasses.replace()`로 변형한다.
 - 전략별 설정은 전략별 dataclass로 분리한다 (`MinerviniConfig`, `QullamaggieConfig`, ...).
 - 전략은 자기 config만 받는다. `AppConfig` 전체를 전략에 넘기지 않는다.
+- **전략 간 같아야 하는 값은 `AppConfig.__post_init__`이 강제한다.** 와인스타인의 Stage
+  파라미터(150선·기울기 lookback·평탄 기준)는 `RegimeConfig`와 같은 값이어야 한다 —
+  게이트가 쓰는 Stage는 주입된 값이고 신선도는 자기 config로 직접 세기 때문에, 스윕에서
+  한쪽만 `replace()`하면 화면의 Stage와 점수가 세는 Stage 2가 조용히 갈라진다.
+  그런 조합은 만들어지는 즉시 ValueError로 죽는다.
 
 ### 4. CLI와 프론트엔드는 동일한 JSON 계약을 공유
 
@@ -245,6 +294,10 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 - **미확정 필드를 계약에 넣지 않는다.** 소속 위치나 의미가 아직 정해지지 않았으면
   넣지 말고, 확정되는 Phase에서 `SCHEMA_VERSION`을 올리며 추가한다.
   (예: `PositionState`는 enum만 정의되어 있고 이를 참조하는 필드는 없다.)
+- **아직 채워지지 않는 필드에는 그 사실을 주석으로 못 박는다.** `rs_line_new_high`는
+  산출 함수는 있지만 호출부가 없어 항상 None이며, CANSLIM Phase에서 연결한다.
+  `risk_plan`도 planner 구현 전까지 항상 None이다. '언젠가 채워지겠지'로 두면
+  프론트가 값이 오는 줄 알고 UI를 만든다.
 
 ## `is_bar_complete` 규칙
 
@@ -265,6 +318,7 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `config.py` | 모든 임계값 dataclass |
 | `core/types.py` | 데이터 계약. 로직 없음 |
 | `core/context.py` | `StockContext` — 지표 계산이 끝난 상태 객체 |
+| `core/report.py` | 판정 목록 -> `DiagnosisReport` 조립. 컨센서스 파생의 단일 지점 |
 | `data/fetcher.py` | yfinance 3년치 OHLCV + parquet 캐시 |
 | `data/universe.py` | 유니버스 교차단면 RS 백분위 |
 | `data/universes/*.txt` | 유니버스 구성 종목 목록. 생존편향 경고 포함 |
@@ -277,8 +331,9 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `render/cli.py` | rich 렌더러 |
 | `render/json_out.py` | 프론트엔드용 직렬화 (유일한 진입점) |
 | `strategies/dummy.py` | 하네스 검증용 더미 3종. 매매 판단용이 아니다 |
-| `examples/*.json` | 손으로 채운 목업 리포트. 계약 변경 시 여기가 먼저 깨진다 |
+| `examples/*.json` | **실제 전략 출력**으로 생성한 예시 리포트 (`scripts/make_examples.py`) |
 | `docs/review_phase0-2.md` | Phase 0~2 비판적 리뷰와 조치 내역 |
+| `docs/review_phase3-4.md` | Phase 3~4 비판적 리뷰와 조치 내역 |
 
 ## 코딩 컨벤션
 
@@ -311,6 +366,10 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 - ❌ 임계값 하드코딩 금지. 전부 `config.py`.
 - ❌ 계산 불가를 `0.0`이나 `False`로 채우지 말 것. `None` / `UNAVAILABLE`.
 - ❌ 미완성 봉의 거래량으로 거래량 조건을 판정하지 말 것.
+- ❌ 돌파(BREAKOUT) 상태에서 거래량 확인 없이 BUY를 내지 말 것. 확인 불가도 BUY가 아니다.
+- ❌ `examples/*.json`을 손으로 고치지 말 것. `scripts/make_examples.py`로 재생성한다.
+- ❌ config에 있는 임계값을 코드가 소비하지 않은 채 두지 말 것. 스윕 대상 파라미터가
+  무엇을 돌려도 결과가 같으면 그 config는 거짓말이다.
 - ❌ 미래 데이터 참조(look-ahead) 금지. 백테스트에서 `t` 시점 판정에 `t+1` 봉 사용 금지.
 - ❌ 네트워크 호출을 지표/전략 레이어에서 하지 말 것. 데이터는 `data/`에서만.
 - ❌ 테스트 없는 지표 추가 금지.
@@ -327,6 +386,10 @@ python scripts/verify_phase4.py
 ```
 
 ```bash
+python scripts/make_examples.py
+```
+
+```bash
 python scripts/verify_phase3_5.py
 ```
 
@@ -338,4 +401,8 @@ python -m pytest tests/test_types_contract.py -v
 python -c "import json, core.types as t; print(json.dumps(t.DiagnosisReport.model_json_schema(), indent=2, ensure_ascii=False))"
 ```
 
-계약을 바꾸면 `examples/`의 목업 3개도 함께 고쳐야 한다. `tests/test_examples.py`가 막아준다.
+계약이나 전략을 바꾸면 `python scripts/make_examples.py`로 `examples/`를 재생성한다.
+`tests/test_examples.py`가 같은 (티커, as_of)를 다시 평가해 파일과 대조하므로,
+재생성을 잊으면 테스트가 실패하며 무엇을 해야 하는지 알려 준다.
+**예시를 손으로 고치지 말 것** — 손 목업이 구현을 못 따라가는 것이 Phase 3~4에서
+두 번 증명됐고, 스키마 검증은 '형태는 맞지만 내용이 거짓인' 파일을 잡지 못한다.

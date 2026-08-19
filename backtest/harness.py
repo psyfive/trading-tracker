@@ -633,6 +633,9 @@ class PanelResult:
     by_score_bucket: tuple[GroupStats, ...]
     audits: tuple[LookaheadAudit, ...]
     entries_by_ticker: tuple[tuple[str, int], ...]
+    # 봉이 모자라 평가조차 못 한 티커. tickers는 성공한 종목 수만 세므로 이 목록이
+    # 없으면 '29종목 중 20종목이 스킵된 패널'과 '원래 9종목짜리 패널'을 구분할 수 없다.
+    skipped_tickers: tuple[str, ...] = ()
 
     @property
     def excess_return_pct(self) -> float | None:
@@ -663,6 +666,10 @@ def evaluate_panel(
     audit_tickers: look-ahead 감사를 돌릴 종목 수. 감사는 시점당 2회 평가라 비싸고,
     전략의 결정론이 종목에 의존하지 않으므로 표본으로 충분하다. 다만 '표본'이라는
     사실이 결과에 남아야 하므로 audits 목록을 그대로 들고 다닌다.
+
+    봉이 모자란 티커는 건너뛰되 `PanelResult.skipped_tickers`에 남긴다. 단건 실행이
+    InsufficientBacktestDataError로 시끄럽게 죽는 것과 대비되는 선택인데, 조용히
+    사라지면 '29종목 패널'이라고 부르는 것이 거짓이 되기 때문에 흔적을 남긴다.
     """
     backtest = config.backtest
     injections = injections or {}
@@ -673,6 +680,7 @@ def evaluate_panel(
     }
     audits: list[LookaheadAudit] = []
     entries: dict[str, int] = {}
+    skipped: list[str] = []
     strategy_name = make_strategy().name
 
     for index, (ticker, df) in enumerate(sorted(frames.items())):
@@ -686,6 +694,9 @@ def evaluate_panel(
         try:
             signals = replay(make_strategy(), ticker, df, run_config, **inject)
         except InsufficientBacktestDataError:
+            # 패널 레벨에서는 티커 하나가 짧다고 전체를 멈추지 않는다. 다만 조용히
+            # 넘기지도 않는다 — 스킵 사실이 결과 객체에 남아야 표본 해석이 가능하다.
+            skipped.append(ticker)
             continue
 
         entries[ticker] = sum(1 for s in signals if s.entered)
@@ -712,6 +723,7 @@ def evaluate_panel(
             by_score_bucket=bucket_outcomes(groups.entered, backtest),
             audits=tuple(audits),
             entries_by_ticker=tuple(sorted(entries.items())),
+            skipped_tickers=tuple(skipped),
         )
         for horizon, groups in pooled.items()
     ]

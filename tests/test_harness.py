@@ -646,6 +646,17 @@ def test_panel_skips_tickers_without_enough_bars():
     assert "TOOSHORT" not in dict(result.entries_by_ticker)
 
 
+def test_panel_records_which_tickers_were_skipped():
+    """조용히 사라지면 '3종목 패널'이라는 말 자체가 거짓이 된다."""
+    from backtest.harness import evaluate_panel
+
+    frames = panel_frames(2)
+    frames["TOOSHORT"] = synthetic(60)
+    result = evaluate_panel(AlwaysBuyStrategy, frames, fast_config(warmup=200))[0]
+    assert result.skipped_tickers == ("TOOSHORT",)
+    assert result.tickers + len(result.skipped_tickers) == len(frames)
+
+
 def test_panel_audit_is_a_sample_and_says_so():
     """감사는 표본이다. 몇 종목을 봤는지가 결과에 남아야 한다."""
     from backtest.harness import evaluate_panel

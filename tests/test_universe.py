@@ -257,6 +257,27 @@ def test_non_member_ticker_is_ranked_against_the_universe(us_closes, us_scores):
     assert abs(against[last] - member[last]) < 2.0
 
 
+def test_member_and_non_member_use_the_same_percentile_convention(us_closes, us_scores):
+    """두 경로의 규약이 다르면 게이트 경계(RS 70/80)에서 소속 여부로 판정이 뒤집힌다.
+
+    규약은 strictly-less 비율이다. 구성종목 경로가 rank(pct=True)를 쓰면 최하위가
+    100/n에서 시작해 계통적으로 후해진다 — 그 차이를 여기서 잠근다.
+    """
+    percentiles = rs_percentile_frame(us_scores, UNIVERSE)
+    row = percentiles.dropna(how="all").iloc[-1].dropna()
+    universe_size = len(row)
+
+    assert row.min() == pytest.approx(0.0), "최하위는 0이어야 한다 (strictly-less 규약)"
+    assert row.max() < 100.0, "자기 자신은 자기보다 낮지 않다"
+
+    # 같은 종목을 두 경로로 재면 '분모에 자기 자신이 있는가'만큼만 차이나야 한다.
+    ticker = str(row.idxmax())
+    member = rs_percentile_series(ticker, percentiles)
+    against = rs_percentile_against(us_closes[ticker], us_scores, UNIVERSE)
+    day = max(against)
+    assert abs(against[day] - member[day]) <= 100.0 / universe_size
+
+
 # ===========================================================================
 # 경고 — 숫자와 함께 다녀야 한다
 # ===========================================================================

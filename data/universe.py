@@ -120,12 +120,23 @@ def rs_score_frame(closes: pd.DataFrame, config: UniverseConfig) -> pd.DataFrame
 def rs_percentile_frame(scores: pd.DataFrame, config: UniverseConfig) -> pd.DataFrame:
     """날짜별 교차단면 순위 -> 0~100.
 
+    규약은 **strictly-less 비율**이다: 백분위 = (자기보다 점수가 낮은 종목 수) / n * 100.
+    따라서 최하위는 0이고 값의 범위는 [0, 100)이다.
+
+    `rank(pct=True)`를 쓰지 않는 이유가 여기 있다. 그것은 자기 자신을 포함해 순위를
+    매기므로 최하위가 0이 아니라 100/n이 되고, 유니버스 **밖** 종목을 재는
+    `rs_percentile_against()`(strictly-less)와 규약이 어긋난다. n=116이면 0.9p,
+    KOSPI(50)면 2p의 계통 차이라, RS 70/80 같은 게이트 경계에 걸린 종목의 판정이
+    '유니버스 소속 여부'로 뒤집힐 수 있다. 두 경로가 같은 정의를 쓰게 맞춘다.
+    (동점은 낮은 쪽으로 본다 — method="min"이 동점자에게 같은 최소 순위를 준다.)
+
     그 날짜에 점수가 있는 종목이 min_universe_size 미만이면 전부 NaN이다.
     표본이 적으면 백분위 해상도가 떨어지는데, 그것을 그럴듯한 숫자로 내보내면
     게이트 임계값(>= 70)의 의미가 조용히 달라진다.
     """
     available = scores.notna().sum(axis=1)
-    ranked = scores.rank(axis=1, pct=True) * 100.0
+    # (최소순위 - 1) / n = 자기보다 엄격히 낮은 종목의 비율.
+    ranked = (scores.rank(axis=1, method="min") - 1.0).div(available, axis=0) * 100.0
     return ranked.where(available >= config.min_universe_size)
 
 
@@ -148,6 +159,10 @@ def rs_percentile_against(
     종목의 RS 점수를 구한 뒤, 각 날짜의 유니버스 점수 분포에서 그 점수가 차지하는
     위치를 찾는다. 구성종목이 아니어도 '유니버스 대비 순위'라는 정의는 그대로
     성립한다 — 자기 과거와 비교하는 것이 아니라 다른 종목들과 비교하기 때문이다.
+
+    규약은 `rs_percentile_frame()`과 같은 strictly-less 비율이다. 분모에 자기 자신이
+    없다는 차이(n vs n+1)는 남지만, 그것은 소속 여부가 만드는 불가피한 차이이고
+    계통 편차(항상 +100/n)는 아니다.
     """
     scores = rs_score(closes, config).reindex(universe_scores.index)
     available = universe_scores.notna().sum(axis=1)
@@ -167,6 +182,12 @@ def rs_line_new_high_series(
     """RS 라인(종목/벤치마크)이 lookback 구간 신고가인지.
 
     백분위와 달리 유니버스가 필요 없다 — 벤치마크 하나와의 비율이면 정의가 완결된다.
+
+    **아직 어디에도 연결되지 않았다.** 진단 파이프라인도 전략 3종도 이 함수를 부르지
+    않으므로 `IndicatorSnapshot.rs_line_new_high`는 항상 None이다. RS 라인 신고가를
+    실제 판정에 쓰는 방법론은 CANSLIM이며, 연결은 그 Phase의 몫이다. 그전까지 이
+    함수는 시점 정합성 테스트(tests/test_universe.py)로만 유지된다 — 죽은 코드로
+    두는 것이 아니라 '연결 시점이 정해진 미연결 코드'라는 뜻이다.
     """
     aligned = pd.concat([stock_close, benchmark_close], axis=1, join="inner")
     aligned.columns = ["stock", "benchmark"]

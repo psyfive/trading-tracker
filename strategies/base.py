@@ -7,8 +7,13 @@ CLAUDE.md 원칙 1은 주석으로만 지켜지지 않는다. StrategyBase.evalu
 
 from __future__ import annotations
 
+import functools
+import weakref
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Protocol, runtime_checkable
+
+import pandas as pd
 
 from core.context import StockContext
 from core.types import (
@@ -22,6 +27,74 @@ from core.types import (
     StrategyVerdict,
     Verdict,
 )
+
+
+def memoize_per_context[T](
+    method: Callable[[object, StockContext], T],
+) -> Callable[[object, StockContext], T]:
+    """탐지 결과를 **ctx 하나당 한 번만** 계산하도록 1슬롯 캐시한다.
+
+    한 번의 evaluate()에서 build_gate / build_score / detect_setup / build_setup_metrics /
+    decide가 같은 탐지(베이스·거래범위·컨솔)를 각각 다시 돌리던 중복을 없앤다.
+
+    캐시 키는 ctx **객체의 신원**이며 weakref로 비교한다. 값(티커·날짜·길이)으로 키를
+    만들면 look-ahead 감사가 무력화될 수 있다 — 감사는 같은 시점을 두 번 평가해
+    비교하므로, 두 평가가 캐시를 공유하면 차이가 사라져 위반이 사라진 것처럼 보인다.
+    감사의 두 패스는 서로 다른 ctx 객체를 만들므로 신원 비교는 그 함정을 피한다.
+    weakref를 쓰는 이유는 id() 재사용 때문이다 — 죽은 객체의 주소를 새 객체가
+    물려받아도 ref()가 None이라 캐시가 적중하지 않는다.
+    """
+    attr = f"_memo_{method.__name__}"
+
+    @functools.wraps(method)
+    def wrapper(self: object, ctx: StockContext) -> T:
+        cached = getattr(self, attr, None)
+        if cached is not None:
+            ref, value = cached
+            if ref() is ctx:
+                return value
+        value = method(self, ctx)
+        object.__setattr__(self, attr, (weakref.ref(ctx), value))
+        return value
+
+    return wrapper
+
+
+def decay_score(value: float, ideal: float, worst: float) -> float:
+    """ideal 이하면 1.0, worst 이상이면 0.0, 사이는 선형. **작을수록 좋은 값**에 쓴다.
+
+    전략마다 복사하지 않는다 — 정규화 어휘가 갈라지면 같은 '이상/최악' 표현이
+    전략별로 다른 곡선이 된다. (전략끼리 import 하지 않는 규칙은 지켜진다.)
+    """
+    if worst <= ideal:
+        return 1.0 if value <= ideal else 0.0
+    return max(0.0, min(1.0, (worst - value) / (worst - ideal)))
+
+
+def scaled_score(value: float, ideal: float, *, lower_is_better: bool) -> float:
+    """0~1로 정규화한 품질 점수. ideal에 도달하면 1.0, 반대 극단이면 0.0."""
+    if ideal <= 0:
+        return 0.0
+    if lower_is_better:
+        return max(0.0, min(1.0, (1.0 - value) / (1.0 - ideal))) if ideal < 1.0 else 0.0
+    return max(0.0, min(1.0, value / ideal))
+
+
+def breakout_volume_ratio(
+    volumes: pd.Series, avg_volume: float | None, span: int
+) -> float | None:
+    """최근 span봉 중 **최대 거래량** / 50일 평균. 근거가 없으면 None (0.0이 아니다).
+
+    '돌파 봉'을 오늘로 못 박지 않는 이유: 스윙 고점이 확정되는 데 k봉이 걸리므로
+    돌파를 인지한 시점에 돌파 봉은 이미 며칠 전일 수 있다. 그 구간의 최대 거래량을
+    돌파 거래량으로 본다.
+
+    한계: 급락 봉의 대량 거래도 같은 값에 잡힌다. 방향까지 구분하려면 돌파 봉을
+    특정해야 하고 그것은 전략마다 정의가 갈린다.
+    """
+    if not avg_volume or span <= 0 or len(volumes) == 0:
+        return None
+    return float(volumes.iloc[-span:].max()) / avg_volume
 
 
 def build_gate_check(
@@ -111,7 +184,9 @@ class Strategy(Protocol):
     내야 한다. look-ahead 감사(backtest/harness.py)가 같은 시점을 두 번 평가해
     비교하는 방식이므로, 호출 순서나 호출 간 누적 상태에 따라 판정이 달라지는
     전략은 감사를 통과할 수 없거나(억울한 적발) 감사를 무력화한다(양쪽이 같은
-    오염 상태를 공유). 캐시를 쓰려면 키를 ctx 내용에서만 유도할 것.
+    오염 상태를 공유). 한 번의 evaluate() 안에서 같은 탐지를 재사용하려면
+    `memoize_per_context`를 쓸 것 — 키가 ctx 객체의 신원이라 감사의 두 패스가
+    캐시를 공유하지 않는다.
     """
 
     name: str

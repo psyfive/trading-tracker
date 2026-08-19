@@ -14,6 +14,24 @@ SCORE는 게이트를 통과한 종목의 **진입 타이밍 품질**만 잰다.
 '확인 못 함'이다. FAIL로 처리하면 신규 상장주가 조용히 탈락하고 사용자는 이유를 모른다.
 `build_gate_check`가 shortfall_pct를, `build_gate_result`가 UNAVAILABLE 정책을 담당한다.
 
+## 돌파 거래량과 베이스 깊이는 BUY의 **필요조건**이다 (점수가 아니다)
+
+미너비니는 거래량 없는 돌파를 사지 않고, 지나치게 깊은 베이스를 유효한 베이스로 보지
+않는다. 두 조건은 가산점으로 두면 다른 항목의 점수로 상쇄되므로 `decide()`의 이진
+조건으로 둔다. 게이트에 넣지 않는 이유는 게이트가 **추세 템플릿**이기 때문이다 —
+셋업(베이스·돌파)에 관한 조건은 게이트 통과 이후의 타이밍 판단에 속한다.
+
+돌파 거래량은 BREAKOUT 상태에서만 확인 가능하다. PIVOT_READY는 아직 돌파가 없어
+확인할 대상 자체가 없으므로 notes로 "돌파 시 거래량 확인 필요"를 남긴다.
+
+## 베이스 탐지 창은 65봉이다 (구조적 한계)
+
+`base_lookback_days=65` 창 안에서만 앵커를 찾으므로 **수개월짜리 베이스는 표현되지
+않는다**. 또 앵커 탐색이 실패하는 경로가 없어서 봉이 충분하면 detect_base()는 항상
+무언가를 반환한다 — 강한 단조 상승 구간에서도 '짧은 베이스'가 잡힌다. 따라서
+BASE_FORMING은 '베이스가 있다'가 아니라 '최근 65봉 안에 눌림 구조가 있다'로 읽어야
+한다. 깊이 상한(max_base_depth_pct)이 그중 명백히 무효한 것을 BUY에서 걸러낸다.
+
 ## 미완성 봉에서는 거래량 항목을 채점하지 않는다
 
 장중 실행 시 당일 누적 거래량으로 '거래량 건조'를 재면 항상 건조해 보인다.
@@ -45,7 +63,14 @@ from core.types import (
     Verdict,
 )
 from indicators.core import swing_positions
-from strategies.base import StrategyBase, build_gate_check, build_gate_result
+from strategies.base import (
+    StrategyBase,
+    breakout_volume_ratio,
+    build_gate_check,
+    build_gate_result,
+    memoize_per_context,
+    scaled_score,
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +93,7 @@ class BaseStructure:
     contraction_ratio: float | None
     base_avg_volume: float | None
     recent_avg_volume: float | None
+    breakout_volume_ratio: float | None
 
     @property
     def volume_dryup_ratio(self) -> float | None:
@@ -159,6 +185,11 @@ def detect_base(ctx: StockContext, config: MinerviniConfig) -> BaseStructure | N
     recent_span = min(len(base), config.swing_fractal_k * 2)
     base_volume = float(base["volume"].mean()) if len(base) else None
     recent_volume = float(base["volume"].iloc[-recent_span:].mean()) if recent_span else None
+    # 돌파 거래량은 50일 평균 대비다. 베이스 평균 대비로 재면 건조도(volume_dryup)와
+    # 같은 기준을 두 번 쓰게 되어 '건조한 베이스일수록 돌파가 쉬워지는' 역전이 생긴다.
+    breakout_volume = breakout_volume_ratio(
+        base["volume"], ctx.indicators.avg_volume_50, recent_span
+    )
 
     return BaseStructure(
         start_position=len(df) - len(base),
@@ -171,26 +202,23 @@ def detect_base(ctx: StockContext, config: MinerviniConfig) -> BaseStructure | N
         contraction_ratio=(depths[-1] / depths[0] if len(depths) >= 2 and depths[0] > 0 else None),
         base_avg_volume=base_volume,
         recent_avg_volume=recent_volume,
+        breakout_volume_ratio=breakout_volume,
     )
-
-
-def _scaled(value: float, ideal: float, *, lower_is_better: bool) -> float:
-    """0~1로 정규화한 품질 점수. ideal에 도달하면 1.0, 반대 극단이면 0.0."""
-    if ideal <= 0:
-        return 0.0
-    if lower_is_better:
-        return max(0.0, min(1.0, (1.0 - value) / (1.0 - ideal))) if ideal < 1.0 else 0.0
-    return max(0.0, min(1.0, value / ideal))
 
 
 class MinerviniStrategy(StrategyBase):
     """SEPA 추세 템플릿 + VCP."""
 
     name = "minervini"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def __init__(self, config: MinerviniConfig) -> None:
         self.config = config
+
+    @memoize_per_context
+    def _base(self, ctx: StockContext) -> BaseStructure | None:
+        """이 ctx의 베이스. evaluate() 한 번에 네 번 탐지하던 것을 한 번으로 줄인다."""
+        return detect_base(ctx, self.config)
 
     # -----------------------------------------------------------------
     # GATE — 추세 템플릿 8조건. 전부 이진 필터다.
@@ -205,7 +233,7 @@ class MinerviniStrategy(StrategyBase):
             check_id: str,
             label: str,
             actual: float | None,
-            threshold: float,
+            threshold: float | None,
             *,
             passed: bool | None,
             comparator: Comparator,
@@ -214,6 +242,13 @@ class MinerviniStrategy(StrategyBase):
             reason_fail: str,
             reason_missing: str,
         ):
+            """threshold는 UNAVAILABLE일 때 None일 수 있다.
+
+            기준값이 config 상수인 조건(기울기·52주·RS)은 확인 못 해도 기준이 그대로
+            존재하므로 싣는다. 반면 기준값이 **파생값**인 조건(이동평균)은 산출되지
+            않았으므로 실을 값이 없다 — 0.0으로 채우면 프론트가 "기준 > $0.00"을
+            그리게 되고, 그것은 '계산 불가를 0.0으로 채우지 말 것' 위반이다.
+            """
             if actual is None or passed is None:
                 return build_gate_check(
                     id=check_id,
@@ -244,7 +279,7 @@ class MinerviniStrategy(StrategyBase):
                 "price_above_sma150_200",
                 "주가 > 150일선 & 200일선",
                 price if have else None,
-                max(ind.sma150, ind.sma200) if have else 0.0,
+                max(ind.sma150, ind.sma200) if have else None,
                 passed=(price > ind.sma150 and price > ind.sma200) if have else None,
                 comparator=Comparator.GT,
                 unit=None,
@@ -270,7 +305,7 @@ class MinerviniStrategy(StrategyBase):
                 "sma150_above_sma200",
                 "150일선 > 200일선",
                 ind.sma150 if have else None,
-                ind.sma200 if have else 0.0,
+                ind.sma200 if have else None,
                 passed=(ind.sma150 > ind.sma200) if have else None,
                 comparator=Comparator.GT,
                 unit=None,
@@ -308,7 +343,7 @@ class MinerviniStrategy(StrategyBase):
                 "sma50_above_sma150_200",
                 "50일선 > 150일선 & 200일선",
                 ind.sma50 if have else None,
-                max(ind.sma150, ind.sma200) if have else 0.0,
+                max(ind.sma150, ind.sma200) if have else None,
                 passed=(ind.sma50 > ind.sma150 and ind.sma50 > ind.sma200) if have else None,
                 comparator=Comparator.GT,
                 unit=None,
@@ -334,7 +369,7 @@ class MinerviniStrategy(StrategyBase):
                 "price_above_sma50",
                 "주가 > 50일선",
                 price if ind.sma50 is not None else None,
-                ind.sma50 if ind.sma50 is not None else 0.0,
+                ind.sma50,
                 passed=(price > ind.sma50) if ind.sma50 is not None else None,
                 comparator=Comparator.GT,
                 unit=None,
@@ -422,12 +457,12 @@ class MinerviniStrategy(StrategyBase):
 
     def build_score(self, ctx: StockContext) -> tuple[float, float, list[ScoreComponent]]:
         cfg = self.config
-        base = detect_base(ctx, cfg)
+        base = self._base(ctx)
         components: list[ScoreComponent] = []
 
         # 1. VCP 수축 품질
         if base is not None and base.contraction_ratio is not None:
-            quality = _scaled(base.contraction_ratio, cfg.ideal_contraction_ratio,
+            quality = scaled_score(base.contraction_ratio, cfg.ideal_contraction_ratio,
                               lower_is_better=True)
             components.append(
                 ScoreComponent(
@@ -445,7 +480,7 @@ class MinerviniStrategy(StrategyBase):
         # 2. 거래량 건조 — 미완성 봉이면 채점하지 않는다 (0점이 아니라 만점에서 제외)
         dryup = base.volume_dryup_ratio if base is not None else None
         if ctx.volume_reliable and dryup is not None:
-            quality = _scaled(dryup, cfg.ideal_volume_dryup_ratio, lower_is_better=True)
+            quality = scaled_score(dryup, cfg.ideal_volume_dryup_ratio, lower_is_better=True)
             components.append(
                 ScoreComponent(
                     id="volume_dryup",
@@ -459,7 +494,7 @@ class MinerviniStrategy(StrategyBase):
         # 3. 피벗 근접도
         if base is not None and base.pivot_price > 0:
             to_pivot = (base.pivot_price - ctx.price) / ctx.price * 100.0
-            closeness = _scaled(
+            closeness = scaled_score(
                 max(0.0, cfg.pivot_proximity_pct - abs(to_pivot)) / cfg.pivot_proximity_pct,
                 1.0,
                 lower_is_better=False,
@@ -476,7 +511,7 @@ class MinerviniStrategy(StrategyBase):
 
         # 4. 베이스 성숙도
         if base is not None:
-            maturity = _scaled(
+            maturity = scaled_score(
                 base.length_days / cfg.ideal_base_length_days, 1.0, lower_is_better=False
             )
             components.append(
@@ -493,7 +528,7 @@ class MinerviniStrategy(StrategyBase):
         rs = ctx.indicators.rs_percentile
         if rs is not None:
             headroom = max(0.0, 100.0 - cfg.min_rs_percentile)
-            strength = _scaled(
+            strength = scaled_score(
                 (rs - cfg.min_rs_percentile) / headroom if headroom else 0.0,
                 1.0,
                 lower_is_better=False,
@@ -518,7 +553,7 @@ class MinerviniStrategy(StrategyBase):
 
     def detect_setup(self, ctx: StockContext) -> SetupState:
         cfg = self.config
-        base = detect_base(ctx, cfg)
+        base = self._base(ctx)
         if base is None:
             return SetupState.NO_SETUP
 
@@ -548,7 +583,7 @@ class MinerviniStrategy(StrategyBase):
         return SetupState.BASE_FORMING
 
     def build_setup_metrics(self, ctx: StockContext) -> SetupMetrics:
-        base = detect_base(ctx, self.config)
+        base = self._base(ctx)
         if base is None:
             return SetupMetrics()
 
@@ -571,12 +606,37 @@ class MinerviniStrategy(StrategyBase):
                     if base.volume_dryup_ratio is not None
                     else None
                 ),
+                breakout_volume_ratio=(
+                    round(base.breakout_volume_ratio, 4)
+                    if base.breakout_volume_ratio is not None
+                    else None
+                ),
             ),
         )
 
     # -----------------------------------------------------------------
     # DECIDE
     # -----------------------------------------------------------------
+
+    def _breakout_volume_note(self, base: BaseStructure | None) -> tuple[bool, str]:
+        """돌파 거래량 확인 결과와 그 근거 한 줄. 반환: (확인됨, 메모).
+
+        비율을 낼 수 없으면(50일 평균 미산출) **확인 실패**로 본다. 확인 못 한 조건을
+        충족으로 치는 것은 게이트의 UNAVAILABLE 정책과 반대 방향이다.
+        """
+        required = self.config.breakout_volume_ratio
+        ratio = base.breakout_volume_ratio if base is not None else None
+        if ratio is None:
+            return False, (
+                "돌파 거래량을 확인할 수 없다 (50일 평균 거래량 미산출) — "
+                "확인되지 않은 돌파는 사지 않는다"
+            )
+        if ratio < required:
+            return False, (
+                f"돌파 거래량이 50일 평균의 {ratio:.2f}배 — 기준 {required:.1f}배 미달. "
+                "거래량 없는 돌파는 사지 않는다"
+            )
+        return True, f"돌파 거래량 {ratio:.2f}배 (기준 {required:.1f}배 이상) 확인"
 
     def decide(
         self,
@@ -606,17 +666,40 @@ class MinerviniStrategy(StrategyBase):
         if setup is SetupState.NO_SETUP:
             return Verdict.WATCH, [*notes, "베이스가 형성되지 않았다 — 진입 지점이 없다"]
 
+        base = self._base(ctx)
+
+        # 베이스 깊이 상한 — 깊은 베이스는 돌파해도 사지 않는다 (실패 확률 필터).
+        if base is not None and base.depth_pct > cfg.max_base_depth_pct:
+            return Verdict.WATCH, [
+                *notes,
+                f"베이스 깊이 {base.depth_pct:.1f}%가 상한 {cfg.max_base_depth_pct:.0f}%를 "
+                "넘는다 — 미너비니가 유효한 베이스로 보지 않는 구조다",
+            ]
+
         if setup in (SetupState.PIVOT_READY, SetupState.BREAKOUT):
-            if score_pct >= cfg.buy_min_score_pct and ctx.volume_reliable:
-                return Verdict.BUY, [
-                    *notes,
-                    f"{setup.value} — 타이밍 점수 {score:.1f}/{max_score:.0f} "
-                    f"({score_pct:.0f}%)로 기준 {cfg.buy_min_score_pct:.0f}% 이상",
-                ]
             if not ctx.volume_reliable:
                 return Verdict.WATCH, [
                     *notes,
                     "거래량 확인 없이 BUY를 내지 않는다 — 장 마감 후 재평가",
+                ]
+
+            # 돌파 거래량 — 돌파가 일어난 뒤에만 확인 가능한 조건이다.
+            if setup is SetupState.BREAKOUT:
+                confirmed, volume_note = self._breakout_volume_note(base)
+                if not confirmed:
+                    return Verdict.WATCH, [*notes, volume_note]
+                notes.append(volume_note)
+            else:
+                notes.append(
+                    f"돌파 전이다 — 돌파 시 거래량이 50일 평균의 "
+                    f"{cfg.breakout_volume_ratio:.1f}배 이상인지 확인해야 한다"
+                )
+
+            if score_pct >= cfg.buy_min_score_pct:
+                return Verdict.BUY, [
+                    *notes,
+                    f"{setup.value} — 타이밍 점수 {score:.1f}/{max_score:.0f} "
+                    f"({score_pct:.0f}%)로 기준 {cfg.buy_min_score_pct:.0f}% 이상",
                 ]
             return Verdict.WATCH, [
                 *notes,

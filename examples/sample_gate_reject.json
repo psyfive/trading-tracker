@@ -1,56 +1,56 @@
 {
-  "schema_version": "1.2.0",
-  "ticker": "JNJ",
-  "as_of": "2026-08-17",
-  "generated_at": "2026-08-18T00:15:00Z",
-  "price": 88.4,
+  "schema_version": "1.3.0",
+  "ticker": "AAPL",
+  "as_of": "2024-10-22",
+  "generated_at": "2026-08-19T21:00:00Z",
+  "price": 233.90335083007812,
   "is_bar_complete": true,
   "bar_meta": {
-    "last_bar_date": "2026-08-17",
+    "last_bar_date": "2024-10-22",
     "session_state": "CLOSED",
     "is_bar_complete": true,
-    "bars_available": 756,
+    "bars_available": 301,
     "exchange_tz": "America/New_York",
     "volume_judgements_reliable": true
   },
-  "regime": "CAUTION",
+  "regime": "RISK_ON",
   "stage": "STAGE_2",
   "indicators": {
-    "sma20": 87.1,
-    "sma50": 85.6,
-    "sma150": 82.9,
-    "sma200": 81.4,
-    "ema10": 87.85,
-    "ema21": 86.7,
-    "sma50_slope_10d_pct": 2.4,
-    "sma150_slope_20d_pct": 1.8,
-    "sma200_slope_20d_pct": 1.2,
-    "rsi14": 58.1,
-    "atr14": 1.62,
-    "atr_pct": 1.83,
-    "adr20_pct": 1.7,
-    "macd": 1.05,
-    "macd_signal": 0.82,
-    "macd_hist": 0.23,
-    "bb_upper": 89.9,
-    "bb_mid": 87.1,
-    "bb_lower": 84.3,
-    "bb_width_pct": 6.43,
-    "high_52w": 96.1,
-    "low_52w": 74.2,
-    "from_52w_high_pct": -8.01,
-    "above_52w_low_pct": 19.14,
-    "volume": 11360000.0,
-    "avg_volume_50": 8000000.0,
-    "volume_ratio": 1.42,
-    "dollar_volume_50": 707000000.0,
-    "rs_percentile": 74.0,
-    "rs_line_new_high": false
+    "sma20": 227.60355224609376,
+    "sma50": 224.42365264892578,
+    "sma150": 204.24675201416017,
+    "sma200": 198.41930328369142,
+    "ema10": 230.67018104725082,
+    "ema21": 228.0909053392183,
+    "sma50_slope_10d_pct": 1.5461794333766254,
+    "sma150_slope_20d_pct": 3.614049040279268,
+    "sma200_slope_20d_pct": 1.9151829755112415,
+    "rsi14": 62.12394842331446,
+    "atr14": 4.1707897908669125,
+    "atr_pct": 1.7831252848946284,
+    "adr20_pct": 1.4990529405977782,
+    "macd": 2.793863047209072,
+    "macd_signal": 2.0678270690280875,
+    "macd_hist": 0.7260359781809846,
+    "bb_upper": 235.3082635436826,
+    "bb_mid": 227.60355224609376,
+    "bb_lower": 219.8988409485049,
+    "bb_width_pct": 6.77029090412282,
+    "high_52w": 235.51985237359267,
+    "low_52w": 162.31053482208006,
+    "from_52w_high_pct": -0.6863546861223291,
+    "above_52w_low_pct": 44.10854544129003,
+    "volume": 38846600.0,
+    "avg_volume_50": 48643414.0,
+    "volume_ratio": 0.7985993746244867,
+    "dollar_volume_50": 10918663904.675446,
+    "rs_percentile": 66.95652173913044,
+    "rs_line_new_high": null
   },
   "strategy_verdicts": [
     {
       "strategy_name": "minervini",
-      "strategy_version": "0.1.0",
+      "strategy_version": "1.1.0",
       "gate": {
         "strategy": "minervini",
         "passed": false,
@@ -59,89 +59,89 @@
             "id": "price_above_sma150_200",
             "label": "주가 > 150일선 & 200일선",
             "status": "PASS",
-            "actual": 88.4,
-            "threshold": 82.9,
+            "actual": 233.9034,
+            "threshold": 204.24675201416017,
             "comparator": "GT",
-            "unit": "$",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "주가 88.40 > 150일선 82.90 (200일선 81.40도 상회)"
+            "reason": "주가 233.90 > 150일선 204.25, 200일선 198.42"
           },
           {
             "id": "sma150_above_sma200",
             "label": "150일선 > 200일선",
             "status": "PASS",
-            "actual": 82.9,
-            "threshold": 81.4,
+            "actual": 204.2468,
+            "threshold": 198.41930328369142,
             "comparator": "GT",
-            "unit": "$",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "150일선 82.90 > 200일선 81.40"
+            "reason": "150일선 204.25 > 200일선 198.42"
           },
           {
             "id": "sma200_trending_up",
             "label": "200일선 상승 중 (20일)",
             "status": "PASS",
-            "actual": 1.2,
+            "actual": 1.9152,
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
             "shortfall_pct": null,
-            "reason": "200일선 20일 기울기 +1.2%"
+            "reason": "200일선 20일 기울기 +1.92%"
           },
           {
             "id": "sma50_above_sma150_200",
             "label": "50일선 > 150일선 & 200일선",
             "status": "PASS",
-            "actual": 85.6,
-            "threshold": 82.9,
+            "actual": 224.4237,
+            "threshold": 204.24675201416017,
             "comparator": "GT",
-            "unit": "$",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "50일선 85.60 > 150일선 82.90"
+            "reason": "50일선 224.42 > 150일선 204.25, 200일선 198.42"
           },
           {
             "id": "price_above_sma50",
             "label": "주가 > 50일선",
             "status": "PASS",
-            "actual": 88.4,
-            "threshold": 85.6,
+            "actual": 233.9034,
+            "threshold": 224.42365264892578,
             "comparator": "GT",
-            "unit": "$",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "주가 88.40 > 50일선 85.60 (+3.3%)"
+            "reason": "주가 233.90 > 50일선 224.42"
           },
           {
             "id": "above_52w_low",
             "label": "52주 저점 대비 +30% 이상",
-            "status": "FAIL",
-            "actual": 19.14,
+            "status": "PASS",
+            "actual": 44.1085,
             "threshold": 30.0,
             "comparator": "GTE",
             "unit": "%",
-            "shortfall_pct": 36.2,
-            "reason": "52주 저점 74.20 대비 +19.1% — 기준 30%에 10.9%p 미달"
+            "shortfall_pct": null,
+            "reason": "52주 저점 대비 +44.1%"
           },
           {
             "id": "near_52w_high",
             "label": "52주 고점 대비 -25% 이내",
             "status": "PASS",
-            "actual": -8.01,
+            "actual": -0.6864,
             "threshold": -25.0,
             "comparator": "GTE",
             "unit": "%",
             "shortfall_pct": null,
-            "reason": "52주 고점 96.10 대비 -8.0%"
+            "reason": "52주 고점 대비 -0.7%"
           },
           {
             "id": "rs_percentile",
             "label": "RS 백분위 70 이상",
-            "status": "PASS",
-            "actual": 74.0,
+            "status": "FAIL",
+            "actual": 66.9565,
             "threshold": 70.0,
             "comparator": "GTE",
             "unit": null,
-            "shortfall_pct": null,
-            "reason": "RS 백분위 74"
+            "shortfall_pct": 4.347857142857135,
+            "reason": "RS 백분위 67.0 — 기준 70에 3.0 미달"
           }
         ],
         "pass_count": 7,
@@ -152,201 +152,247 @@
       "score": null,
       "max_score": null,
       "components": [],
-      "setup_state": "NO_SETUP",
+      "setup_state": "PIVOT_READY",
       "setup_metrics": {
-        "pivot_price": null,
-        "to_pivot_ratio": null,
-        "to_pivot_pct": null,
-        "base_length_days": null,
-        "base_depth_pct": null,
-        "detail": null
+        "pivot_price": 235.5199,
+        "to_pivot_ratio": 0.993136,
+        "to_pivot_pct": 0.6911,
+        "base_length_days": 38,
+        "base_depth_pct": 9.9246,
+        "detail": {
+          "kind": "minervini",
+          "contraction_count": 3,
+          "contraction_ratio": 1.1088,
+          "volume_dryup_ratio": 0.8176,
+          "breakout_volume_ratio": 1.3311
+        }
       },
       "verdict": "REJECTED_BY_GATE",
       "notes": [
-        "8개 조건 중 7개 통과. 52주 저점 대비 상승률만 미달",
-        "점수를 계산하지 않았다 — score가 null인 것은 0점이라는 뜻이 아니다",
-        "저점 대비 상승폭이 얕다는 것은 아직 본격 추세 구간이 아니라는 신호다. 게이트는 이 종목을 걸러낸다"
+        "게이트 7/8 통과 — 채점하지 않았다"
       ]
     },
     {
       "strategy_name": "weinstein",
-      "strategy_version": "0.1.0",
+      "strategy_version": "1.1.0",
       "gate": {
         "strategy": "weinstein",
         "passed": true,
         "checks": [
           {
-            "id": "price_above_ma150",
-            "label": "주가 > 30주선(150일선)",
-            "status": "PASS",
-            "actual": 88.4,
-            "threshold": 82.9,
-            "comparator": "GT",
-            "unit": "$",
-            "shortfall_pct": null,
-            "reason": "주가 88.40 > 30주선 82.90"
-          },
-          {
-            "id": "ma150_trending_up",
-            "label": "30주선 상승 중",
-            "status": "PASS",
-            "actual": 1.8,
-            "threshold": 0.0,
-            "comparator": "GT",
-            "unit": "%",
-            "shortfall_pct": null,
-            "reason": "30주선 20일 기울기 +1.8%"
-          },
-          {
-            "id": "stage2_confirmed",
-            "label": "Stage 2 진행 확인",
+            "id": "stage_is_2",
+            "label": "Stage 2 (상승 추세)",
             "status": "PASS",
             "actual": null,
             "threshold": null,
             "comparator": "BOOL",
             "unit": null,
             "shortfall_pct": null,
-            "reason": "30주선 상향 돌파 후 7주 경과, 저점 절상 유지"
+            "reason": "Stage 2 — 30주선 위에서 30주선이 상승 중"
           },
           {
-            "id": "volume_confirmation",
-            "label": "돌파 거래량 확인",
+            "id": "price_above_ma10w",
+            "label": "주가 > 10주선",
             "status": "PASS",
-            "actual": 1.42,
-            "threshold": 1.0,
-            "comparator": "GTE",
-            "unit": "x",
+            "actual": 233.9034,
+            "threshold": 224.4237,
+            "comparator": "GT",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "거래량이 50일 평균의 1.42배"
+            "reason": "주가 233.90 > 10주선 224.42"
+          },
+          {
+            "id": "market_not_risk_off",
+            "label": "시장 국면이 RISK_OFF가 아님",
+            "status": "PASS",
+            "actual": null,
+            "threshold": null,
+            "comparator": "BOOL",
+            "unit": null,
+            "shortfall_pct": null,
+            "reason": "시장 국면 RISK_ON"
+          },
+          {
+            "id": "rs_percentile",
+            "label": "RS 백분위 50 이상",
+            "status": "PASS",
+            "actual": 66.9565,
+            "threshold": 50.0,
+            "comparator": "GTE",
+            "unit": null,
+            "shortfall_pct": null,
+            "reason": "RS 백분위 67.0"
+          },
+          {
+            "id": "dollar_volume",
+            "label": "50일 평균 거래대금",
+            "status": "PASS",
+            "actual": 10918663904.68,
+            "threshold": 1000000.0,
+            "comparator": "GTE",
+            "unit": "$",
+            "shortfall_pct": null,
+            "reason": "50일 평균 거래대금 10,918,663,905"
           }
         ],
-        "pass_count": 4,
-        "total": 4,
+        "pass_count": 5,
+        "total": 5,
         "unavailable_count": 0,
         "required_count": null
       },
-      "score": 68.0,
-      "max_score": 85.0,
+      "score": 54.47,
+      "max_score": 100.0,
       "components": [
         {
-          "id": "ma_slope_quality",
-          "label": "30주선 기울기",
-          "earned": 12.0,
-          "max": 20.0,
-          "detail": "기울기 +1.8%로 완만함"
-        },
-        {
-          "id": "distance_from_ma",
-          "label": "이동평균 이격도",
-          "earned": 19.0,
-          "max": 20.0,
-          "detail": "30주선 대비 +6.6% — 진입에 적정한 이격"
-        },
-        {
-          "id": "volume_pattern",
-          "label": "거래량 패턴",
-          "earned": 18.0,
-          "max": 20.0,
-          "detail": "돌파일 거래량 1.42배, 조정일 거래량 위축"
-        },
-        {
-          "id": "relative_strength",
-          "label": "시장 대비 강도",
-          "earned": 19.0,
+          "id": "breakout_volume",
+          "label": "돌파 거래량",
+          "earned": 16.64,
           "max": 25.0,
-          "detail": "지수 대비 3개월 초과수익 +4.1%p"
+          "detail": "최근 최대 거래량이 50일 평균의 1.33배 (기준 2.0배)"
+        },
+        {
+          "id": "stage_freshness",
+          "label": "Stage 2 신선도",
+          "earned": 10.0,
+          "max": 25.0,
+          "detail": "Stage 2 조건이 106거래일째 유지 중 (이상 40일 이내)"
+        },
+        {
+          "id": "ma_distance",
+          "label": "30주선 이격도",
+          "earned": 19.35,
+          "max": 25.0,
+          "detail": "30주선 204.25 대비 +14.5%"
+        },
+        {
+          "id": "rs_strength",
+          "label": "상대강도",
+          "earned": 8.48,
+          "max": 25.0,
+          "detail": "RS 백분위 67.0 (기준 50)"
         }
       ],
-      "setup_state": "BREAKOUT",
+      "setup_state": "PIVOT_READY",
       "setup_metrics": {
-        "pivot_price": 84.9,
-        "to_pivot_ratio": 1.041,
-        "to_pivot_pct": -3.96,
-        "base_length_days": 88,
-        "base_depth_pct": 22.8,
-        "detail": null
+        "pivot_price": 235.5199,
+        "to_pivot_ratio": 0.993136,
+        "to_pivot_pct": 0.6911,
+        "base_length_days": 23,
+        "base_depth_pct": 6.8045,
+        "detail": {
+          "kind": "weinstein",
+          "ma30w": 204.2468,
+          "distance_from_ma30w_pct": 14.52,
+          "stage2_age_days": 106,
+          "breakout_volume_ratio": 1.3311
+        }
       },
-      "verdict": "BUY",
+      "verdict": "WATCH",
       "notes": [
-        "Stage 2 진입 확인. 와인스타인은 52주 저점 대비 상승률을 게이트 조건으로 쓰지 않는다",
-        "미너비니가 탈락시킨 바로 그 이유(저점 대비 얕은 상승)가 여기서는 오히려 이격도 점수로 유리하게 작용했다",
-        "판정이 엇갈린다. 두 방법론의 전제가 다르므로 평균내지 말고 각각 읽을 것"
+        "Stage 2 국면 — 시장 국면 RISK_ON",
+        "돌파 전이다 — 저항 돌파 시 거래량이 50일 평균의 2.0배 이상인지 확인해야 한다",
+        "셋업은 갖췄으나 타이밍 점수 54%가 기준 60% 미만"
       ]
     },
     {
-      "strategy_name": "canslim",
-      "strategy_version": "0.1.0",
+      "strategy_name": "qullamaggie",
+      "strategy_version": "1.1.0",
       "gate": {
-        "strategy": "canslim",
+        "strategy": "qullamaggie",
         "passed": false,
         "checks": [
+          {
+            "id": "prior_move",
+            "label": "직전 급등 +30% 이상",
+            "status": "PASS",
+            "actual": 45.1045,
+            "threshold": 30.0,
+            "comparator": "GTE",
+            "unit": "%",
+            "shortfall_pct": null,
+            "reason": "컨솔 직전 상승 +45.1%"
+          },
+          {
+            "id": "adr_pct",
+            "label": "ADR 3% 이상",
+            "status": "FAIL",
+            "actual": 1.4991,
+            "threshold": 3.0,
+            "comparator": "GTE",
+            "unit": "%",
+            "shortfall_pct": 50.029999999999994,
+            "reason": "ADR(20) 1.50% — 기준 3% 미달. 변동성이 없어 목표 수익까지 가지 못한다"
+          },
+          {
+            "id": "dollar_volume",
+            "label": "50일 평균 거래대금",
+            "status": "PASS",
+            "actual": 10918663904.6754,
+            "threshold": 3000000.0,
+            "comparator": "GTE",
+            "unit": "$",
+            "shortfall_pct": null,
+            "reason": "50일 평균 거래대금 10,918,663,905"
+          },
           {
             "id": "rs_percentile",
             "label": "RS 백분위 80 이상",
             "status": "FAIL",
-            "actual": 74.0,
+            "actual": 66.9565,
             "threshold": 80.0,
             "comparator": "GTE",
             "unit": null,
-            "shortfall_pct": 7.5,
-            "reason": "RS 백분위 74 — 기준 80에 6p 미달"
+            "shortfall_pct": 16.304374999999993,
+            "reason": "RS 백분위 67.0 — 기준 80에 13.0 미달"
           },
           {
-            "id": "near_52w_high",
-            "label": "52주 고점 대비 -15% 이내",
+            "id": "price_above_ema21",
+            "label": "주가 > EMA21",
             "status": "PASS",
-            "actual": -8.01,
-            "threshold": -15.0,
-            "comparator": "GTE",
-            "unit": "%",
+            "actual": 233.9034,
+            "threshold": 228.0909,
+            "comparator": "GT",
+            "unit": null,
             "shortfall_pct": null,
-            "reason": "52주 고점 96.10 대비 -8.0%"
-          },
-          {
-            "id": "breakout_volume",
-            "label": "돌파 거래량 1.4배 이상",
-            "status": "PASS",
-            "actual": 1.42,
-            "threshold": 1.4,
-            "comparator": "GTE",
-            "unit": "x",
-            "shortfall_pct": null,
-            "reason": "거래량이 50일 평균의 1.42배"
+            "reason": "주가 233.90 > EMA21 228.09"
           }
         ],
-        "pass_count": 2,
-        "total": 3,
+        "pass_count": 3,
+        "total": 5,
         "unavailable_count": 0,
         "required_count": null
       },
       "score": null,
       "max_score": null,
       "components": [],
-      "setup_state": "NO_SETUP",
+      "setup_state": "PIVOT_READY",
       "setup_metrics": {
-        "pivot_price": null,
-        "to_pivot_ratio": null,
-        "to_pivot_pct": null,
-        "base_length_days": null,
-        "base_depth_pct": null,
-        "detail": null
+        "pivot_price": 235.5199,
+        "to_pivot_ratio": 0.993136,
+        "to_pivot_pct": 0.6911,
+        "base_length_days": 23,
+        "base_depth_pct": 6.8045,
+        "detail": {
+          "kind": "qullamaggie",
+          "prior_move_pct": 45.1045,
+          "ma_distance_pct": 1.4016,
+          "volume_dryup_ratio": 0.803,
+          "breakout_volume_ratio": 1.3311
+        }
       },
       "verdict": "REJECTED_BY_GATE",
       "notes": [
-        "CANSLIM은 미너비니(70)보다 높은 RS 기준(80)을 요구한다. 같은 RS 74가 한쪽은 통과, 한쪽은 탈락",
-        "펀더멘털 조건(EPS 성장률 등)은 아직 게이트에 포함되지 않았다"
+        "게이트 3/5 통과 — 채점하지 않았다"
       ]
     }
   ],
   "consensus": {
     "total_strategies": 3,
     "verdict_counts": {
-      "BUY": 1,
-      "REJECTED_BY_GATE": 2
+      "REJECTED_BY_GATE": 2,
+      "WATCH": 1
     },
-    "buy_strategies": [
-      "weinstein"
-    ],
+    "buy_strategies": [],
     "gate_passed_strategies": [
       "weinstein"
     ],
@@ -362,60 +408,28 @@
       {
         "strategy": "weinstein",
         "passed": true,
-        "pass_count": 4,
-        "total": 4,
+        "pass_count": 5,
+        "total": 5,
         "unavailable_count": 0,
         "progress_ratio": 1.0
       },
       {
-        "strategy": "canslim",
+        "strategy": "qullamaggie",
         "passed": false,
-        "pass_count": 2,
-        "total": 3,
+        "pass_count": 3,
+        "total": 5,
         "unavailable_count": 0,
-        "progress_ratio": 0.6667
+        "progress_ratio": 0.6
       }
     ],
-    "agreement": "SPLIT"
+    "agreement": "NONE"
   },
-  "risk_plan": {
-    "entry": 88.4,
-    "stop": 82.1,
-    "stop_pct": 7.13,
-    "r_per_share": 6.3,
-    "shares": 158,
-    "position_value": 13967.2,
-    "account_equity": 100000.0,
-    "risk_pct": 1.0,
-    "risk_amount": 995.4,
-    "r_levels": [
-      {
-        "multiple": 1.0,
-        "price": 94.7,
-        "suggested_action": "손절을 본전(88.40)으로 이동"
-      },
-      {
-        "multiple": 2.0,
-        "price": 101.0,
-        "suggested_action": "1/3 부분 익절, 나머지는 30주선 추격 손절로 전환"
-      },
-      {
-        "multiple": 3.0,
-        "price": 107.3,
-        "suggested_action": "추가 1/3 익절, 잔여는 Stage 3 전환 신호까지 보유"
-      }
-    ],
-    "exit_rules": [
-      "종가 기준 82.10(30주선 하단) 이탈 시 전량 청산",
-      "30주선이 하락 전환하면 Stage 3 의심 — 포지션 축소",
-      "시장 국면이 RISK_OFF로 전환되면 신규 진입 보류"
-    ]
-  },
+  "risk_plan": null,
   "warnings": [
     {
       "code": "RS_UNIVERSE_MISSING",
       "severity": "INFO",
-      "message": "RS 백분위가 S&P500 기준으로만 산출되었다. 전체 시장 유니버스 대비 순위와 다를 수 있다",
+      "message": "RS 백분위가 'us_large' 유니버스 115종목 대비 순위다. 이 목록은 현재 상장 중인 종목만 담고 있어 과거 시점의 실제 구성종목이 아니다 — 그때 존재했다 사라진 종목이 분모에서 빠지므로 백분위가 낙관 쪽으로 치우친다. 시점별 구성종목 데이터가 없는 한 이 편향은 제거되지 않는다",
       "field": "indicators.rs_percentile"
     }
   ]

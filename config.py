@@ -161,12 +161,17 @@ class MinerviniConfig:
     base_lookback_days: int = 65      # 베이스 앵커(최근 고점)를 찾는 창
     swing_fractal_k: int = 3          # 스윙 고저 판정 창. i봉이 i±k 구간의 극값인가
     min_base_length_days: int = 25
+
+    # --- 돌파 확인: BUY의 필요조건. 점수가 아니라 이진 조건이다 ---
+    # 깊은 베이스는 미너비니가 실패 확률로 거르는 대상이다. 이 깊이를 넘는 베이스는
+    # 돌파해도 BUY를 내지 않는다 (셋업 판정 자체는 그대로 수행한다).
     max_base_depth_pct: float = 35.0
+    # 돌파 봉 거래량 / 50일 평균. 거래량 없는 돌파는 사지 않는다.
+    breakout_volume_ratio: float = 1.5
 
     # --- SCORE: 타이밍 채점 (게이트 통과 종목만) ---
     pivot_proximity_pct: float = 3.0        # 피벗 이내 이 거리면 PIVOT_READY
     extended_pct_above_pivot: float = 5.0   # 피벗 대비 이 이상이면 EXTENDED
-    breakout_volume_ratio: float = 1.5
     ideal_contraction_ratio: float = 0.5    # 마지막 수축폭 / 첫 수축폭. 작을수록 타이트
     ideal_volume_dryup_ratio: float = 0.7   # 최근 거래량 / 베이스 평균. 작을수록 건조
     ideal_base_length_days: int = 40
@@ -192,10 +197,14 @@ class WeinsteinConfig:
     """
 
     # --- GATE ---
+    # 아래 3개는 RegimeConfig의 Stage 판정 파라미터와 **같은 값이어야 한다**.
+    # 게이트가 쓰는 Stage(주입값)와 신선도가 세는 Stage 2가 다른 선을 보면
+    # 화면의 Stage와 점수의 Stage가 조용히 갈라진다. AppConfig.__post_init__이 강제한다.
     ma_period_daily: int = 150        # 30주선 근사. Stage 판정에 쓰는 선
-    ma_short_period_daily: int = 50   # 10주선 근사. Stage 2 안에서의 단기 이탈 필터
     slope_lookback: int = 20
-    slope_min_pct: float = 0.0
+    stage_flat_slope_pct: float = 0.5  # 이 기울기 이하면 '평탄' — Stage 2가 아니다
+
+    ma_short_period_daily: int = 50   # 10주선 근사. Stage 2 안에서의 단기 이탈 필터
     min_rs_percentile: float = 50.0   # 미너비니(70)보다 낮다 — 국면 전환 초기를 잡는 방법론
     min_dollar_volume: float = 1_000_000.0
 
@@ -258,9 +267,15 @@ class QullamaggieConfig:
     max_ma_distance_pct: float = 15.0
     ideal_prior_move_pct: float = 100.0
     ideal_volume_dryup_ratio: float = 0.7
+    # 컨솔 평균과 같은 거래량(1.0배)이면 건조가 아니다 -> 0점. 항등원이 아니라 판정 기준이다.
+    max_volume_dryup_ratio: float = 1.0
     pivot_proximity_pct: float = 3.0
     extended_pct_above_pivot: float = 5.0
     buy_min_score_pct: float = 60.0
+
+    # --- 돌파 확인: BUY의 필요조건 ---
+    # 돌파 봉 거래량 / 50일 평균. 미너비니(1.5)와 같은 기준을 쓰되 값은 독립이다.
+    breakout_volume_ratio: float = 1.5
 
     # 배점 (합계 100)
     weight_tightness: float = 25.0
@@ -297,7 +312,14 @@ class BacktestConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """최상위 설정. main.py와 backtest/harness.py가 이것 하나만 주고받는다."""
+    """최상위 설정. main.py와 backtest/harness.py가 이것 하나만 주고받는다.
+
+    __post_init__은 **전략 간 파라미터 드리프트**를 막는다. 와인스타인의 Stage 신선도는
+    자기 config로 Stage 2 조건을 직접 세는데, 게이트가 쓰는 Stage는 RegimeConfig로
+    산출돼 주입된 값이다. 두 곳이 다른 선(또는 다른 평탄 기준)을 보면 화면의 Stage와
+    점수가 세는 Stage 2가 조용히 갈라진다 — 스윕에서 replace()로 한쪽만 바꿀 때
+    실제로 일어나는 사고라, 조용히 어긋나는 대신 여기서 시끄럽게 죽인다.
+    """
 
     data: DataConfig = field(default_factory=DataConfig)
     exchanges: ExchangeConfig = field(default_factory=ExchangeConfig)
@@ -310,6 +332,28 @@ class AppConfig:
     weinstein: WeinsteinConfig = field(default_factory=WeinsteinConfig)
     canslim: CanslimConfig = field(default_factory=CanslimConfig)
     qullamaggie: QullamaggieConfig = field(default_factory=QullamaggieConfig)
+
+    def __post_init__(self) -> None:
+        mismatches = [
+            (name, mine, theirs)
+            for name, mine, theirs in (
+                ("이동평균 기간", self.weinstein.ma_period_daily, self.regime.stage_ma_period),
+                ("기울기 lookback", self.weinstein.slope_lookback, self.regime.slope_lookback),
+                (
+                    "평탄 기울기 기준",
+                    self.weinstein.stage_flat_slope_pct,
+                    self.regime.stage_flat_slope_pct,
+                ),
+            )
+            if mine != theirs
+        ]
+        if mismatches:
+            detail = ", ".join(f"{name}: weinstein={mine} vs regime={theirs}"
+                               for name, mine, theirs in mismatches)
+            raise ValueError(
+                "WeinsteinConfig의 Stage 파라미터가 RegimeConfig와 다르다 — "
+                f"게이트의 Stage와 신선도가 세는 Stage 2가 갈라진다 ({detail})"
+            )
 
 
 DEFAULT_CONFIG = AppConfig()

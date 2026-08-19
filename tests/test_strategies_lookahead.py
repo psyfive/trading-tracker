@@ -42,14 +42,26 @@ AUDIT_CONFIG = replace(
 )
 
 
+# 시장을 하나만 태우면 통화 스케일·거래일·유동성 자릿수가 다른 경로가 검사되지 않는다.
+# 픽스처 2종목이면 감사 비용은 2배지만, 미래 참조가 특정 셋업 국면에서만 나는 유형을
+# 비켜갈 확률이 줄어든다.
+AUDIT_TICKERS = (
+    ("AAPL", "aapl", "universe_us_large_closes.parquet"),
+    ("005930.KS", "samsung", "universe_kospi_closes.parquet"),
+)
+
+
 @pytest.fixture(scope="module")
-def rs_by_date() -> dict:
-    """AAPL의 시점별 RS 백분위. 유니버스 픽스처에서 계산한다 (네트워크 없음)."""
-    closes = pd.read_parquet(FIXTURE_DIR / "universe_us_large_closes.parquet")
-    percentiles = rs_percentile_frame(
-        rs_score_frame(closes, DEFAULT_CONFIG.universe), DEFAULT_CONFIG.universe
-    )
-    return rs_percentile_series("AAPL", percentiles)
+def rs_by_ticker() -> dict[str, dict]:
+    """시점별 RS 백분위. 유니버스 픽스처에서 계산한다 (네트워크 없음)."""
+    out: dict[str, dict] = {}
+    for ticker, _, universe_file in AUDIT_TICKERS:
+        closes = pd.read_parquet(FIXTURE_DIR / universe_file)
+        percentiles = rs_percentile_frame(
+            rs_score_frame(closes, DEFAULT_CONFIG.universe), DEFAULT_CONFIG.universe
+        )
+        out[ticker] = rs_percentile_series(ticker, percentiles)
+    return out
 
 
 def strategies():
@@ -62,19 +74,26 @@ def strategies():
 
 
 @pytest.mark.parametrize("strategy", strategies(), ids=lambda s: s.name)
-def test_strategy_passes_the_lookahead_audit(strategy, aapl, rs_by_date):
+@pytest.mark.parametrize(
+    ("ticker", "fixture_name"),
+    [(ticker, fixture_name) for ticker, fixture_name, _ in AUDIT_TICKERS],
+)
+def test_strategy_passes_the_lookahead_audit(
+    strategy, ticker, fixture_name, rs_by_ticker, request
+):
     """미래 유무에 따라 판정이 달라지면 위반이다.
 
     비교 대상은 verdict/score만이 아니라 StrategyVerdict 전체다 — setup_state나
     setup_metrics로만 새는 미래 참조도 리포트에 실리므로 똑같이 잡아야 한다.
     """
+    df = request.getfixturevalue(fixture_name)
     audit = audit_lookahead(
         strategy,
-        "AAPL",
-        aapl,
+        ticker,
+        df,
         AUDIT_CONFIG,
-        stage_by_date=stage_series(aapl, DEFAULT_CONFIG.regime),
-        rs_percentile_by_date=rs_by_date,
+        stage_by_date=stage_series(df, DEFAULT_CONFIG.regime),
+        rs_percentile_by_date=rs_by_ticker[ticker],
     )
     assert audit.checked_points > 0, "감사가 한 시점도 검사하지 못했다"
     assert audit.violations == ()
