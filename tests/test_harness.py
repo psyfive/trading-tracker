@@ -21,7 +21,6 @@ from backtest.harness import (
     evaluate_results,
     forward_outcome,
     replay,
-    slice_as_of,
     summarize,
 )
 from config import DEFAULT_CONFIG
@@ -105,14 +104,6 @@ class SpyStrategy(StrategyBase):
 # ===========================================================================
 
 
-def test_slice_as_of_excludes_later_bars():
-    df = synthetic(20)
-    cut = df.index[10].date()
-    sliced = slice_as_of(df, cut)
-    assert sliced.index[-1].date() == cut
-    assert len(sliced) == 11
-
-
 def test_strategy_never_sees_bars_beyond_t():
     """전략이 받은 데이터의 마지막 봉이 항상 평가 시점과 일치해야 한다."""
     df = synthetic(400)
@@ -172,6 +163,48 @@ def test_rejected_signals_have_no_entry():
     rejected = [s for s in signals if not s.gate_passed]
     assert rejected, "탈락 시그널이 하나도 없다 — 무작위 전략이 이상하다"
     assert all(s.entry_price is None and s.entry_date is None for s in rejected)
+
+
+class WatchOnlyStrategy(StrategyBase):
+    """게이트는 항상 통과하지만 절대 사지 않는 전략. 진입 기준이 verdict임을 검증한다."""
+
+    name = "watch_only"
+    version = "1.0.0"
+
+    def build_gate(self, ctx: StockContext) -> GateResult:
+        check = GateCheck(
+            id="ok", label="통과", status=CheckStatus.PASS,
+            comparator=Comparator.BOOL, reason="watch",
+        )
+        return GateResult(strategy=self.name, passed=True, checks=[check], pass_count=1, total=1)
+
+    def build_score(self, ctx):
+        return 50.0, 100.0, [ScoreComponent(id="s", label="s", earned=50.0, max=100.0, detail="s")]
+
+    def detect_setup(self, ctx):
+        return SetupState.NO_SETUP
+
+    def decide(self, ctx, score, max_score, components, setup):
+        return Verdict.WATCH, ["관망만 한다"]
+
+
+def test_gate_pass_without_buy_is_not_an_entry():
+    """게이트 통과 != 진입. WATCH를 매수로 집계하면 '게이트 성과'를 재는 것이 된다."""
+    df = synthetic(400)
+    signals = replay(WatchOnlyStrategy(), "SYN", df, fast_config(warmup=250))
+    assert all(s.gate_passed for s in signals)
+    assert all(not s.entered for s in signals)
+    assert all(s.entry_price is None and s.entry_date is None for s in signals)
+
+
+def test_watch_only_strategy_has_empty_entered_group():
+    """진입 0건이 '수익률 0%'가 아니라 n=0으로 나와야 하고, 통과-미진입군에 잡혀야 한다."""
+    df = synthetic(400)
+    result = evaluate_results(WatchOnlyStrategy(), "SYN", df, fast_config(warmup=200))[0]
+    assert result.signals.n == 0
+    assert result.signals.mean_return_pct is None
+    assert result.gate_passed_not_entered.n == result.benchmark.n
+    assert result.gate_rejected.n == 0
 
 
 # ===========================================================================
@@ -274,6 +307,31 @@ def test_always_buy_matches_the_unconditional_benchmark_exactly():
         assert result.signals.n == result.benchmark.n
         assert result.excess_return_pct == pytest.approx(0.0, abs=1e-12)
         assert result.gate_rejected.n == 0
+
+
+def test_always_buy_mean_matches_independently_computed_buy_and_hold():
+    """내부 벤치마크 대비 초과수익 0은 같은 계산에서 나오므로 동어반복이다.
+
+    여기서는 진입 규칙(다음 봉 시가 -> horizon-1봉 뒤 종가)을 하네스 코드 없이
+    직접 다시 계산해서, 오프셋/정렬 배선이 틀리면 실제로 어긋나게 만든다.
+    """
+    df = synthetic(400)
+    config = fast_config(warmup=200)
+    bt = config.backtest
+    result = evaluate_results(AlwaysBuyStrategy(), "SYN", df, config)[0]
+
+    opens = df["open"].to_numpy(dtype=float)
+    closes = df["close"].to_numpy(dtype=float)
+    expected = []
+    for position in range(bt.warmup_bars, len(df) - max(bt.horizons) - bt.entry_offset_bars):
+        entry = position + bt.entry_offset_bars
+        exit_ = entry + result.horizon - 1
+        expected.append((closes[exit_] - opens[entry]) / opens[entry] * 100.0)
+
+    assert result.signals.n == len(expected)
+    assert result.signals.mean_return_pct == pytest.approx(
+        sum(expected) / len(expected), abs=1e-9
+    )
 
 
 def test_always_buy_has_a_single_score_bucket():
@@ -411,6 +469,79 @@ def test_strategies_are_never_merged_into_one_score():
     rand = evaluate_results(RandomStrategy(seed=2), "SYN", df, fast_config(warmup=200))[0]
     assert always.strategy_name != rand.strategy_name
     assert not hasattr(always, "combined_score")
+
+
+# ===========================================================================
+# 시점별 컨텍스트 주입 (stage / regime / RS)
+# ===========================================================================
+
+
+class ContextSpyStrategy(StrategyBase):
+    """평가 시점마다 컨텍스트의 stage/regime/rs_percentile을 기록한다."""
+
+    name = "ctx_spy"
+    version = "1.0.0"
+
+    def __init__(self) -> None:
+        self.seen: dict = {}
+
+    def build_gate(self, ctx: StockContext) -> GateResult:
+        self.seen[ctx.as_of] = (ctx.stage, ctx.regime, ctx.indicators.rs_percentile)
+        check = GateCheck(
+            id="ok", label="통과", status=CheckStatus.PASS,
+            comparator=Comparator.BOOL, reason="spy",
+        )
+        return GateResult(strategy=self.name, passed=True, checks=[check], pass_count=1, total=1)
+
+    def build_score(self, ctx):
+        return 50.0, 100.0, [ScoreComponent(id="s", label="s", earned=50.0, max=100.0, detail="s")]
+
+    def detect_setup(self, ctx):
+        return SetupState.NO_SETUP
+
+    def decide(self, ctx, score, max_score, components, setup):
+        return Verdict.BUY, []
+
+
+def test_point_in_time_context_is_injected_per_date():
+    """*_by_date 매핑의 값이 해당 날짜의 컨텍스트에 실제로 도달해야 한다.
+
+    이것이 없으면 stage/RS를 게이트로 쓰는 전략(와인스타인/미너비니)은
+    백테스트에서 영원히 UNAVAILABLE이라 잴 수 없다.
+    """
+    from core.types import MarketRegime, Stage
+
+    df = synthetic(400)
+    spy = ContextSpyStrategy()
+    config = fast_config(warmup=250)
+
+    dates = [ts.date() for ts in df.index]
+    stage_by_date = {d: Stage.STAGE_2 for d in dates[300:]}
+    regime_by_date = {d: MarketRegime.RISK_ON for d in dates[300:]}
+    rs_by_date = {d: 85.0 for d in dates[300:]}
+
+    replay(
+        spy, "SYN", df, config,
+        stage_by_date=stage_by_date,
+        regime_by_date=regime_by_date,
+        rs_percentile_by_date=rs_by_date,
+    )
+
+    assert spy.seen[dates[310]] == (Stage.STAGE_2, MarketRegime.RISK_ON, 85.0)
+    # 매핑에 없는 날짜는 '모름'으로 남는다 — 그럴듯한 값으로 채우지 않는다.
+    assert spy.seen[dates[299]] == (Stage.UNDEFINED, MarketRegime.CAUTION, None)
+
+
+def test_injection_defaults_preserve_old_behavior():
+    """주입 없이 부르면 기존과 동일: stage=UNDEFINED, regime=CAUTION 상수, rs=None."""
+    from core.types import MarketRegime, Stage
+
+    df = synthetic(400)
+    spy = ContextSpyStrategy()
+    replay(spy, "SYN", df, fast_config(warmup=250))
+    assert all(
+        seen == (Stage.UNDEFINED, MarketRegime.CAUTION, None) for seen in spy.seen.values()
+    )
 
 
 # ===========================================================================

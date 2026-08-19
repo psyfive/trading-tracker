@@ -13,11 +13,16 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
+
+# progress_ratio 대조 허용 오차 (DiagnosisReport validator에서 사용).
+# 목업/조립 코드가 소수 4자리로 반올림해도 통과하되 (2/3 -> 0.6667, 오차 3.3e-5),
+# 다른 게이트의 비율값(최소 간격 1/total)은 걸러낸다.
+PROGRESS_RATIO_TOLERANCE = 1e-3
 
 
 # ---------------------------------------------------------------------------
@@ -165,11 +170,16 @@ class SessionState(StrEnum):
 
 
 class Agreement(StrEnum):
-    """전략 간 의견 일치 정도. 점수 평균이 아니라 판정 개수에서만 파생된다."""
+    """전략 간 의견 일치 정도. 점수 평균이 아니라 판정 개수에서만 파생된다.
 
-    UNANIMOUS_BUY = "UNANIMOUS_BUY"  # 게이트 통과 전략 전부 BUY
-    MAJORITY_BUY = "MAJORITY_BUY"    # 과반 BUY
-    SPLIT = "SPLIT"                  # BUY와 비-BUY 혼재, 과반 미달
+    분모는 **전체 전략 수**다 (게이트 통과 전략 수가 아니다). REJECTED_BY_GATE도
+    '비-BUY 의견'으로 센다 — 게이트 탈락 자체가 그 방법론의 부정적 판정이기 때문이다.
+    이 정의는 DiagnosisReport validator가 강제하므로 조립 코드가 임의로 해석할 수 없다.
+    """
+
+    UNANIMOUS_BUY = "UNANIMOUS_BUY"  # 전 전략 BUY
+    MAJORITY_BUY = "MAJORITY_BUY"    # 과반 BUY (전체 전략 대비)
+    SPLIT = "SPLIT"                  # BUY 존재하나 과반 미달
     NONE = "NONE"                    # BUY 없음
 
 
@@ -216,7 +226,23 @@ class GateCheck(Contract):
     threshold: float | None = Field(default=None, description="기준값. BOOL 조건이면 None")
     comparator: Comparator = Comparator.GTE
     unit: str | None = Field(default=None, description="표시 단위. %, x, $, days 등")
+    shortfall_pct: Pct | None = Field(
+        default=None,
+        description=(
+            "FAIL인 조건이 기준에서 얼마나 모자란지. |actual - threshold| / |threshold| * 100. "
+            "PASS/UNAVAILABLE이거나 BOOL 조건이거나 threshold가 0이면 None. "
+            "워치리스트를 '게이트 근접도 순'으로 정렬할 때 쓴다 — 이 값이 없으면 "
+            "프론트가 comparator 방향과 스케일을 직접 해석해야 하고, 그 순간 "
+            "판정 로직이 렌더러로 샌다."
+        ),
+    )
     reason: str = Field(description="숫자를 포함한 한 줄 설명. 예: 주가 182.4 > 200일선 164.1")
+
+    @model_validator(mode="after")
+    def _shortfall_only_on_failure(self) -> GateCheck:
+        if self.shortfall_pct is not None and self.status is not CheckStatus.FAIL:
+            raise ValueError("shortfall_pct는 FAIL인 조건에만 실린다")
+        return self
 
 
 class GateResult(Contract):
@@ -261,7 +287,8 @@ class GateProgress(Contract):
 
     strategy_verdicts[i].gate.pass_count 는 3단계 중첩이라 다수 종목을 정렬할 때 불편하다.
     같은 값을 리포트 상단(consensus)에 평평하게 올려 둔다.
-    DiagnosisReport validator가 원본 GateResult와의 일치를 강제하므로 값이 어긋날 수 없다.
+    DiagnosisReport validator가 원본 GateResult와의 일치를 강제한다 —
+    전략 집합 자체의 일치(누락 금지)와 progress_ratio 값까지 전부 검증 대상이다.
     """
 
     strategy: str
@@ -287,12 +314,47 @@ class ScoreComponent(Contract):
     detail: str = Field(description="숫자 포함 근거 한 줄")
 
 
+class MinerviniSetup(Contract):
+    """미너비니 VCP 전용 수치. SetupMetrics.detail에 실린다.
+
+    여기 있는 값은 **VCP 어휘**다. 다른 방법론은 이 필드를 채우지 않으며,
+    채울 수도 없다 (수축 횟수·건조도는 VCP 정의에서만 의미를 갖는다).
+    """
+
+    kind: Literal["minervini"] = "minervini"
+    contraction_count: int | None = Field(
+        default=None, description="베이스 내 수축 횟수. 미너비니는 2~4회를 이상적으로 본다"
+    )
+    contraction_ratio: Ratio | None = Field(
+        default=None, description="VCP 수축도. 마지막 수축폭 / 첫 수축폭. 작을수록 타이트"
+    )
+    volume_dryup_ratio: Ratio | None = Field(
+        default=None, description="거래량 건조도. 최근 평균거래량 / 베이스 평균거래량"
+    )
+
+
+# 전략별 셋업 상세의 판별 유니온. `kind`로 분기한다.
+#
+# 새 전략을 추가할 때 이 유니온에 변형을 **덧붙이는 것은 additive 변경**이다
+# (기존 소비자는 모르는 kind를 만나면 detail을 무시하면 된다).
+# 아직 구현하지 않은 전략의 필드를 미리 넣지 않는다 — 구현 전에 지은 필드명은
+# 추측이고, 이 프로젝트는 미확정 필드를 계약에 넣지 않는다.
+SetupDetail = Annotated[MinerviniSetup, Field(discriminator="kind")]
+
+
 class SetupMetrics(Contract):
-    """전략별 셋업 수치.
+    """셋업 수치. **공통 코어 + 전략별 detail** 구조다.
 
     IndicatorSnapshot에 두지 않는 이유: 두 전략이 다르게 계산할 수 있으면 지표가 아니다.
     피벗 정의(미너비니 VCP 마지막 수축 고점 vs Qullamaggie 컨솔 상단),
     베이스 시작점 정의가 전략마다 다르므로 판정 주체 옆에 둔다.
+
+    공통 코어에 남긴 것: 모든 추세추종 방법론이 어떤 형태로든 갖는 개념
+    (피벗 가격, 피벗까지 거리, 베이스 길이/깊이). **값의 정의는 전략마다 다르지만
+    개념은 공유된다** — 그래서 프론트는 전략을 몰라도 이 네 값은 그릴 수 있다.
+
+    detail에는 그 전략에서만 의미를 갖는 수치가 들어간다. 프론트는 `detail.kind`로
+    분기하며, 모르는 kind는 무시하면 된다.
     """
 
     pivot_price: float | None = None
@@ -304,11 +366,8 @@ class SetupMetrics(Contract):
     )
     base_length_days: int | None = None
     base_depth_pct: Pct | None = None
-    contraction_ratio: Ratio | None = Field(
-        default=None, description="VCP 수축도. 마지막 수축폭 / 첫 수축폭. 작을수록 타이트"
-    )
-    volume_dryup_ratio: Ratio | None = Field(
-        default=None, description="거래량 건조도. 최근 평균거래량 / 베이스 평균거래량"
+    detail: SetupDetail | None = Field(
+        default=None, description="전략 고유 수치. kind로 분기한다. 없으면 None"
     )
 
 
@@ -470,6 +529,11 @@ class ConsensusSummary(Contract):
 
     의도적으로 평균 점수 필드가 없다. 서로 다른 방법론의 점수는
     척도가 다르므로 평균이 의미를 갖지 않는다. 개수만 센다.
+
+    여기 있는 필드는 전부 strategy_verdicts에서 파생된 **중복 저장**이다.
+    DiagnosisReport validator가 verdict_counts / buy_strategies /
+    gate_passed_strategies / gate_progress / agreement 전부를 원본과 대조한다.
+    드리프트는 리포트 생성 시점에 ValidationError로 죽는다.
     """
 
     total_strategies: int = Field(ge=0)
@@ -537,24 +601,68 @@ class DiagnosisReport(Contract):
     def _mirror_and_counts_consistent(self) -> DiagnosisReport:
         if self.is_bar_complete != self.bar_meta.is_bar_complete:
             raise ValueError("is_bar_complete가 bar_meta와 불일치")
-        if self.consensus.total_strategies != len(self.strategy_verdicts):
+
+        consensus = self.consensus
+        verdicts = self.strategy_verdicts
+        if consensus.total_strategies != len(verdicts):
             raise ValueError("consensus.total_strategies가 strategy_verdicts와 불일치")
-        if self.consensus.gate_progress:
-            expected = {
-                v.strategy_name: (
-                    v.gate.passed,
-                    v.gate.pass_count,
-                    v.gate.total,
-                    v.gate.unavailable_count,
+
+        # gate_progress: 빈 리스트로 검증을 우회할 수 없다.
+        # 전략이 있으면 반드시 전략별 근접도가 있어야 하고, 값도 원본 게이트와 같아야 한다.
+        expected = {
+            v.strategy_name: (
+                v.gate.passed,
+                v.gate.pass_count,
+                v.gate.total,
+                v.gate.unavailable_count,
+            )
+            for v in verdicts
+        }
+        actual = {
+            g.strategy: (g.passed, g.pass_count, g.total, g.unavailable_count)
+            for g in consensus.gate_progress
+        }
+        if expected != actual:
+            raise ValueError("consensus.gate_progress가 strategy_verdicts의 게이트와 불일치")
+        for g in consensus.gate_progress:
+            ratio = g.pass_count / g.total if g.total else 0.0
+            if abs(g.progress_ratio - ratio) > PROGRESS_RATIO_TOLERANCE:
+                raise ValueError(
+                    f"gate_progress[{g.strategy}].progress_ratio({g.progress_ratio})가 "
+                    f"pass_count/total({ratio:.6f})과 불일치"
                 )
-                for v in self.strategy_verdicts
-            }
-            actual = {
-                g.strategy: (g.passed, g.pass_count, g.total, g.unavailable_count)
-                for g in self.consensus.gate_progress
-            }
-            if expected != actual:
-                raise ValueError("consensus.gate_progress가 strategy_verdicts의 게이트와 불일치")
+
+        # verdict_counts: 0인 항목은 있어도 되지만, 0이 아닌 항목은 실제 개수와 같아야 한다.
+        counted: dict[Verdict, int] = {}
+        for v in verdicts:
+            counted[v.verdict] = counted.get(v.verdict, 0) + 1
+        provided = {k: n for k, n in consensus.verdict_counts.items() if n != 0}
+        if provided != counted:
+            raise ValueError("consensus.verdict_counts가 strategy_verdicts와 불일치")
+
+        buys = [v.strategy_name for v in verdicts if v.verdict is Verdict.BUY]
+        if consensus.buy_strategies != buys:
+            raise ValueError("consensus.buy_strategies가 strategy_verdicts와 불일치")
+        gate_passed = [v.strategy_name for v in verdicts if v.gate.passed]
+        if consensus.gate_passed_strategies != gate_passed:
+            raise ValueError("consensus.gate_passed_strategies가 strategy_verdicts와 불일치")
+
+        # agreement: Agreement enum docstring의 정의를 그대로 강제한다.
+        total, n_buy = len(verdicts), len(buys)
+        if n_buy == 0:
+            derived = Agreement.NONE
+        elif n_buy == total:
+            derived = Agreement.UNANIMOUS_BUY
+        elif n_buy * 2 > total:
+            derived = Agreement.MAJORITY_BUY
+        else:
+            derived = Agreement.SPLIT
+        if consensus.agreement is not derived:
+            raise ValueError(
+                f"consensus.agreement({consensus.agreement.value})가 판정 개수에서 파생된 "
+                f"값({derived.value})과 불일치"
+            )
+
         if not self.is_bar_complete and not any(
             w.code is WarningCode.INCOMPLETE_BAR for w in self.warnings
         ):

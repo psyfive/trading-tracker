@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "ticker": "JNJ",
   "as_of": "2026-08-17",
   "generated_at": "2026-08-18T00:15:00Z",
@@ -63,6 +63,7 @@
             "threshold": 82.9,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 88.40 > 150일선 82.90 (200일선 81.40도 상회)"
           },
           {
@@ -73,6 +74,7 @@
             "threshold": 81.4,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "150일선 82.90 > 200일선 81.40"
           },
           {
@@ -83,6 +85,7 @@
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "200일선 20일 기울기 +1.2%"
           },
           {
@@ -93,6 +96,7 @@
             "threshold": 82.9,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "50일선 85.60 > 150일선 82.90"
           },
           {
@@ -103,6 +107,7 @@
             "threshold": 85.6,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 88.40 > 50일선 85.60 (+3.3%)"
           },
           {
@@ -113,6 +118,7 @@
             "threshold": 30.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": 36.2,
             "reason": "52주 저점 74.20 대비 +19.1% — 기준 30%에 10.9%p 미달"
           },
           {
@@ -123,6 +129,7 @@
             "threshold": -25.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 고점 96.10 대비 -8.0%"
           },
           {
@@ -133,6 +140,7 @@
             "threshold": 70.0,
             "comparator": "GTE",
             "unit": null,
+            "shortfall_pct": null,
             "reason": "RS 백분위 74"
           }
         ],
@@ -151,8 +159,7 @@
         "to_pivot_pct": null,
         "base_length_days": null,
         "base_depth_pct": null,
-        "contraction_ratio": null,
-        "volume_dryup_ratio": null
+        "detail": null
       },
       "verdict": "REJECTED_BY_GATE",
       "notes": [
@@ -176,6 +183,7 @@
             "threshold": 82.9,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 88.40 > 30주선 82.90"
           },
           {
@@ -186,6 +194,7 @@
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "30주선 20일 기울기 +1.8%"
           },
           {
@@ -196,6 +205,7 @@
             "threshold": null,
             "comparator": "BOOL",
             "unit": null,
+            "shortfall_pct": null,
             "reason": "30주선 상향 돌파 후 7주 경과, 저점 절상 유지"
           },
           {
@@ -206,6 +216,7 @@
             "threshold": 1.0,
             "comparator": "GTE",
             "unit": "x",
+            "shortfall_pct": null,
             "reason": "거래량이 50일 평균의 1.42배"
           }
         ],
@@ -253,8 +264,7 @@
         "to_pivot_pct": -3.96,
         "base_length_days": 88,
         "base_depth_pct": 22.8,
-        "contraction_ratio": null,
-        "volume_dryup_ratio": null
+        "detail": null
       },
       "verdict": "BUY",
       "notes": [
@@ -278,6 +288,7 @@
             "threshold": 80.0,
             "comparator": "GTE",
             "unit": null,
+            "shortfall_pct": 7.5,
             "reason": "RS 백분위 74 — 기준 80에 6p 미달"
           },
           {
@@ -288,6 +299,7 @@
             "threshold": -15.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 고점 96.10 대비 -8.0%"
           },
           {
@@ -298,6 +310,7 @@
             "threshold": 1.4,
             "comparator": "GTE",
             "unit": "x",
+            "shortfall_pct": null,
             "reason": "거래량이 50일 평균의 1.42배"
           }
         ],
@@ -316,8 +329,7 @@
         "to_pivot_pct": null,
         "base_length_days": null,
         "base_depth_pct": null,
-        "contraction_ratio": null,
-        "volume_dryup_ratio": null
+        "detail": null
       },
       "verdict": "REJECTED_BY_GATE",
       "notes": [

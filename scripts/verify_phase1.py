@@ -50,6 +50,7 @@ from indicators.core import (  # noqa: E402
     volume_sma,
 )
 from indicators.snapshot import build_indicator_snapshot  # noqa: E402
+from render.json_out import to_json  # noqa: E402
 
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 IND = DEFAULT_CONFIG.indicators
@@ -195,7 +196,7 @@ def show_contract_check(df: pd.DataFrame, ticker: str) -> None:
         strategy_verdicts=[],
         consensus=ConsensusSummary(total_strategies=0),
     )
-    restored = DiagnosisReport.model_validate_json(report.model_dump_json())
+    restored = DiagnosisReport.model_validate_json(to_json(report))
 
     filled = sum(getattr(snap, f) is not None for f in IndicatorSnapshot.model_fields)
     total = len(IndicatorSnapshot.model_fields)

@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from core.types import (
+    SCHEMA_VERSION,
     Agreement,
     CheckStatus,
     DiagnosisReport,
@@ -60,7 +61,7 @@ def test_sample_round_trips(name):
 @pytest.mark.parametrize("name", SAMPLE_FILES)
 def test_sample_file_is_valid_json_with_utf8(name):
     payload = json.loads((EXAMPLES_DIR / name).read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "1.0.0"
+    assert payload["schema_version"] == SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("name", SAMPLE_FILES)
@@ -225,5 +226,50 @@ def test_incomplete_sample_withholds_buy():
 
 def test_incomplete_sample_leaves_volume_dryup_ratio_none():
     metrics = verdict_of(load("sample_incomplete_bar.json"), "minervini").setup_metrics
-    assert metrics.volume_dryup_ratio is None
-    assert metrics.contraction_ratio == 0.42
+    assert metrics.detail is not None
+    assert metrics.detail.volume_dryup_ratio is None
+    assert metrics.detail.contraction_ratio == 0.42
+
+
+# ---------------------------------------------------------------------------
+# 게이트 근접도 마진 (스키마 1.1.0)
+# ---------------------------------------------------------------------------
+
+
+def test_failed_checks_carry_a_normalized_shortfall():
+    """프론트가 comparator 방향을 해석하지 않고도 '얼마나 모자랐나'를 알 수 있어야 한다."""
+    report = load("sample_gate_reject.json")
+    failed = verdict_of(report, "minervini").gate.failed_checks[0]
+    assert failed.id == "above_52w_low"
+    assert failed.shortfall_pct == pytest.approx(36.2, abs=0.1)
+
+
+def test_shortfall_distinguishes_near_miss_from_far_miss():
+    """근접도 정렬의 핵심 — 같은 7/8 탈락이라도 미달 폭이 다르면 구분돼야 한다."""
+    report = load("sample_gate_reject.json")
+    minervini_miss = verdict_of(report, "minervini").gate.failed_checks[0].shortfall_pct
+    canslim_miss = verdict_of(report, "canslim").gate.failed_checks[0].shortfall_pct
+    assert canslim_miss < minervini_miss, "CANSLIM RS 74 vs 80이 더 근소해야 한다"
+
+
+def test_passing_checks_have_no_shortfall():
+    for name in SAMPLE_FILES:
+        for verdict in load(name).strategy_verdicts:
+            for check in verdict.gate.checks:
+                if check.status is not CheckStatus.FAIL:
+                    assert check.shortfall_pct is None, f"{name}/{check.id}"
+
+
+def test_setup_detail_is_tagged_by_strategy():
+    """프론트는 detail.kind로 분기한다. 모르는 kind는 무시하면 된다."""
+    detail = verdict_of(load("sample_buy.json"), "minervini").setup_metrics.detail
+    assert detail is not None
+    assert detail.kind == "minervini"
+    assert detail.contraction_count == 3
+
+
+def test_non_minervini_strategies_have_no_setup_detail():
+    """와인스타인은 VCP 어휘를 갖지 않는다. 공통 코어만 채운다."""
+    weinstein = verdict_of(load("sample_buy.json"), "weinstein").setup_metrics
+    assert weinstein.detail is None
+    assert weinstein.pivot_price is not None, "공통 코어(피벗)는 채울 수 있어야 한다"

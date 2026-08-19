@@ -93,13 +93,24 @@ class IndicatorConfig:
 
 @dataclass(frozen=True)
 class RegimeConfig:
-    """시장 국면 판정 임계값."""
+    """시장 국면 + Stage 판정 임계값."""
 
-    index_ticker: str = "^GSPC"
-    breadth_ticker: str | None = None
-    risk_on_min_pct_above_sma200: float = 0.0
+    # 시장별 벤치마크 지수. 티커 접미사로 고른다 (.KS/.KQ -> KOSPI, 그 외 -> SPY).
+    benchmark_by_exchange: tuple[tuple[str, str], ...] = (("US", "SPY"), ("KRX", "^KS11"))
+    default_benchmark: str = "SPY"
+
+    sma_period: int = 200
+    slope_lookback: int = 20
+    risk_on_min_sma200_slope_pct: float = 0.0
+
+    # 분산일: 거래량이 전일보다 늘면서 종가가 이 폭 이상 하락한 날
+    distribution_min_drop_pct: float = 0.2
     caution_max_distribution_days: int = 4
     distribution_lookback_days: int = 25
+
+    # Stage 판정 (와인스타인 30주선 = 일봉 150선 근사)
+    stage_ma_period: int = 150
+    stage_flat_slope_pct: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -122,21 +133,47 @@ class UniverseConfig:
     rs_lookback_days: int = 252
     rs_weights: tuple[float, ...] = (0.4, 0.2, 0.2, 0.2)
     min_universe_size: int = 100
+    # 근사 RS 전용 (Phase 3.5 전까지). 점수를 자기 과거 분포에서 순위화할 때의 창.
+    # rs_lookback_days와 같게 두면 가용 시작이 252+252봉이라 3년치의 절반을 버린다.
+    rs_rank_window: int = 126
 
 
 @dataclass(frozen=True)
 class MinerviniConfig:
-    """미너비니 SEPA 추세 템플릿 + VCP 임계값."""
+    """미너비니 SEPA 추세 템플릿(GATE) + VCP 타이밍(SCORE) 임계값.
 
+    GATE 임계값과 SCORE 임계값을 한 dataclass에 두되 주석으로 구분한다.
+    추세 조건을 SCORE로 옮기지 말 것 — 이 프로젝트의 핵심 설계다.
+    """
+
+    # --- GATE: 추세 템플릿 8조건 ---
     min_pct_above_52w_low: float = 30.0
     max_pct_below_52w_high: float = 25.0
     min_rs_percentile: float = 70.0
     sma200_slope_min_pct: float = 0.0
-    sma150_slope_min_pct: float = 0.0
-    max_base_depth_pct: float = 35.0
+
+    # --- 베이스/피벗 탐지 ---
+    base_lookback_days: int = 65      # 베이스 앵커(최근 고점)를 찾는 창
+    swing_fractal_k: int = 3          # 스윙 고저 판정 창. i봉이 i±k 구간의 극값인가
     min_base_length_days: int = 25
+    max_base_depth_pct: float = 35.0
+
+    # --- SCORE: 타이밍 채점 (게이트 통과 종목만) ---
+    pivot_proximity_pct: float = 3.0        # 피벗 이내 이 거리면 PIVOT_READY
+    extended_pct_above_pivot: float = 5.0   # 피벗 대비 이 이상이면 EXTENDED
     breakout_volume_ratio: float = 1.5
-    extended_pct_above_pivot: float = 5.0
+    ideal_contraction_ratio: float = 0.5    # 마지막 수축폭 / 첫 수축폭. 작을수록 타이트
+    ideal_volume_dryup_ratio: float = 0.7   # 최근 거래량 / 베이스 평균. 작을수록 건조
+    ideal_base_length_days: int = 40
+    min_contractions: int = 2
+    buy_min_score_pct: float = 60.0         # 만점 대비 이 비율 이상이어야 BUY
+
+    # 배점 (합계 100)
+    weight_contraction: float = 25.0
+    weight_volume_dryup: float = 20.0
+    weight_pivot_proximity: float = 20.0
+    weight_base_length: float = 15.0
+    weight_rs_strength: float = 20.0
 
 
 @dataclass(frozen=True)
@@ -178,7 +215,9 @@ class BacktestConfig:
 
     horizons: tuple[int, ...] = (20, 60)
     entry_offset_bars: int = 1
-    warmup_bars: int = 200
+    # 252(52주 고저) + 20(sma200 기울기 lookback) = 272. 200으로 두면 평가 초반 ~70봉에서
+    # 52주/기울기 지표가 None -> 게이트 UNAVAILABLE이 되어 표본이 조용히 줄어든다.
+    warmup_bars: int = 272
     score_buckets: tuple[tuple[float, float], ...] = (
         (0.0, 40.0),
         (40.0, 60.0),

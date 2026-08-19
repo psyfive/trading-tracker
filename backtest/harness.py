@@ -21,6 +21,22 @@
 시그널은 봉 t의 **종가 확정 후** 나온다. 따라서 진입은 t+1 봉의 **시가**다.
 시그널이 난 봉의 종가로 사는 것은 그 종가를 미리 아는 것이므로 look-ahead다.
 
+## 진입 기준은 verdict다 — 게이트가 아니다
+
+진입은 **verdict == BUY**일 때만 발생한다. 게이트를 통과하고도 WATCH/HOLD/AVOID를
+낸 시점은 '전략이 사지 않기로 한 날'이므로 매수로 집계하면 측정 대상이
+'전략 성과'가 아니라 '게이트 성과'로 바뀐다. 세 집단을 분리 집계한다:
+진입(BUY) / 통과-미진입(WATCH 등) / 게이트 탈락.
+
+## 시점별 컨텍스트 주입 (stage / regime / RS)
+
+stage·regime·rs_percentile은 단일 종목 OHLCV만으로는 계산할 수 없어 호출부가
+주입한다. `*_by_date` 매핑을 넘기면 각 평가 시점의 날짜로 조회해 컨텍스트에 넣는다.
+**주입되는 시리즈는 호출부가 시점별(point-in-time)로 계산한 것이어야 한다** —
+날짜 t의 값이 t 이하 데이터로만 산출됐어야 한다는 뜻이다. look-ahead 감사는 같은
+시리즈를 양쪽 평가에 똑같이 쓰므로, 시리즈 자체에 스며든 미래 참조는 적발하지
+못한다. 시리즈 산출 코드(regime/market.py 등)가 스스로 지켜야 하는 책임이다.
+
 ## as_of 개념 (Phase 4 재무 데이터 대비)
 
 지금은 가격만 다루므로 '봉 날짜 <= t'로 충분하다. 그러나 분기 실적 같은 재무 데이터는
@@ -34,6 +50,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -43,6 +60,11 @@ from config import AppConfig, BacktestConfig
 from core.context import StockContext, build_context
 from core.types import BarMeta, MarketRegime, SessionState, Stage, Verdict
 from strategies.base import Strategy
+
+# 시점별 컨텍스트 주입용 매핑. 호출부가 point-in-time으로 계산해 넘긴다 (모듈 docstring 참조).
+RegimeByDate = Mapping[date, MarketRegime]
+StageByDate = Mapping[date, Stage]
+RsByDate = Mapping[date, float]
 
 
 class LookaheadError(RuntimeError):
@@ -78,7 +100,11 @@ def _evaluation_range(df: pd.DataFrame, backtest: BacktestConfig) -> range:
 
 @dataclass(frozen=True)
 class Signal:
-    """한 시점의 평가 결과. 게이트 탈락도 기록한다 (탈락군 집계를 위해)."""
+    """한 시점의 평가 결과. 게이트 탈락도 기록한다 (탈락군 집계를 위해).
+
+    entry_date/entry_price는 **verdict == BUY일 때만** 채워진다. 게이트를 통과해도
+    전략이 사지 않기로 했다면(WATCH 등) 진입이 아니다.
+    """
 
     as_of: date
     gate_passed: bool
@@ -86,6 +112,11 @@ class Signal:
     score: float | None
     entry_date: date | None
     entry_price: float | None
+
+    @property
+    def entered(self) -> bool:
+        """전략이 실제로 진입한 시점인지."""
+        return self.verdict is Verdict.BUY
 
 
 @dataclass(frozen=True)
@@ -145,13 +176,19 @@ class LookaheadAudit:
 
 @dataclass(frozen=True)
 class BacktestResult:
-    """전략 하나 × 티커 하나 × 기간 하나의 성과. 전략끼리 합산하지 않는다."""
+    """전략 하나 × 티커 하나 × 기간 하나의 성과. 전략끼리 합산하지 않는다.
+
+    signals는 **진입(BUY) 집단**이다. 게이트를 통과했지만 진입하지 않은 시점
+    (WATCH/HOLD/AVOID)은 gate_passed_not_entered로 분리 집계한다 — 이 집단을
+    signals에 섞으면 '전략 성과'가 아니라 '게이트 성과'를 재는 것이 된다.
+    """
 
     strategy_name: str
     ticker: str
     horizon: int
     bars_evaluated: int
     signals: GroupStats
+    gate_passed_not_entered: GroupStats
     gate_rejected: GroupStats
     benchmark: GroupStats
     by_score_bucket: tuple[GroupStats, ...]
@@ -178,11 +215,6 @@ BIAS_WARNINGS = (
 # ---------------------------------------------------------------------------
 # look-ahead 가드
 # ---------------------------------------------------------------------------
-
-
-def slice_as_of(df: pd.DataFrame, as_of: date) -> pd.DataFrame:
-    """as_of 이하의 봉만 반환. look-ahead 차단 지점이다."""
-    return df[df.index.date <= as_of]
 
 
 def _assert_point_in_time(ctx: StockContext, expected_last: pd.Timestamp, position: int) -> None:
@@ -221,14 +253,22 @@ def _evaluate_at(
     config: AppConfig,
     *,
     regime: MarketRegime,
+    regime_by_date: RegimeByDate | None = None,
+    stage_by_date: StageByDate | None = None,
+    rs_percentile_by_date: RsByDate | None = None,
     visible_history: pd.DataFrame | None = None,
 ):
     """시점 position에서 전략을 평가한다.
 
     visible_history: 뒷문(requires_full_history)으로 주입할 데이터.
     감사에서 '얼마나 보여줄지'를 바꿔가며 부르기 위해 인자로 뺐다.
+
+    *_by_date: 시점별 컨텍스트 주입 (모듈 docstring 참조). 해당 날짜가 매핑에 없으면
+    regime은 상수 인자로, stage는 UNDEFINED로, rs_percentile은 None으로 떨어진다 —
+    '모름'을 그럴듯한 값으로 채우지 않는다.
     """
     window = df.iloc[: position + 1]
+    as_of = df.index[position].date()
 
     if getattr(strategy, "requires_full_history", False):
         strategy.inject_full_history(df if visible_history is None else visible_history)
@@ -237,9 +277,16 @@ def _evaluate_at(
         ticker,
         window,
         config,
-        regime=regime,
+        regime=regime_by_date.get(as_of, regime) if regime_by_date is not None else regime,
         bar_meta=_make_bar_meta(window),
-        stage=Stage.UNDEFINED,
+        stage=(
+            stage_by_date.get(as_of, Stage.UNDEFINED)
+            if stage_by_date is not None
+            else Stage.UNDEFINED
+        ),
+        rs_percentile=(
+            rs_percentile_by_date.get(as_of) if rs_percentile_by_date is not None else None
+        ),
     )
     _assert_point_in_time(ctx, df.index[position], position)
     return strategy.evaluate(ctx)
@@ -252,6 +299,9 @@ def audit_lookahead(
     config: AppConfig,
     *,
     regime: MarketRegime = MarketRegime.CAUTION,
+    regime_by_date: RegimeByDate | None = None,
+    stage_by_date: StageByDate | None = None,
+    rs_percentile_by_date: RsByDate | None = None,
 ) -> LookaheadAudit:
     """시점별 재현 감사.
 
@@ -261,6 +311,16 @@ def audit_lookahead(
 
     정직한 전략은 t 이하만 쓰므로 두 판정이 같아야 한다.
     다르면 t 이후 데이터가 판정에 영향을 준 것이고, 그것이 곧 look-ahead다.
+
+    비교는 **StrategyVerdict 전체**다 (verdict/score만이 아니다). setup_state나
+    setup_metrics로만 새는 미래 참조도 리포트와 프론트에 실리므로 똑같이 위반이다.
+
+    한계 (docstring에 명시해 두는 이유는 이 감사를 증명으로 오독하지 않기 위함이다):
+      - 표본 시점(lookahead_audit_samples)에서만 검사한다. 드물게만 미래를 쓰는
+        전략은 표본을 비켜갈 수 있다.
+      - 호출 간 상태를 쌓는 전략은 검사 자체를 무력화한다 (Strategy Protocol의
+        결정론 요구사항 참조).
+      - 주입된 *_by_date 시리즈 자체의 look-ahead는 잡지 못한다 (모듈 docstring).
     """
     backtest = config.backtest
     declared = bool(getattr(strategy, "requires_full_history", False))
@@ -269,25 +329,27 @@ def audit_lookahead(
     step = max(1, len(span) // backtest.lookahead_audit_samples)
     positions = list(range(span.start, span.stop, step))[: backtest.lookahead_audit_samples]
 
+    injected = {
+        "regime_by_date": regime_by_date,
+        "stage_by_date": stage_by_date,
+        "rs_percentile_by_date": rs_percentile_by_date,
+    }
     violations: list[str] = []
     for position in positions:
         truncated = df.iloc[: position + 1]
         with_future = _evaluate_at(
-            strategy, ticker, df, position, config, regime=regime, visible_history=df
+            strategy, ticker, df, position, config, regime=regime,
+            visible_history=df, **injected,
         )
         without_future = _evaluate_at(
             strategy, ticker, truncated, position, config, regime=regime,
-            visible_history=truncated,
+            visible_history=truncated, **injected,
         )
 
-        if (with_future.verdict, with_future.gate.passed, with_future.score) != (
-            without_future.verdict,
-            without_future.gate.passed,
-            without_future.score,
-        ):
+        if with_future != without_future:
             violations.append(
-                f"{df.index[position].date()}: 미래가 있을 때 "
-                f"{with_future.verdict.value}(score={with_future.score}), "
+                f"{df.index[position].date()}: 미래 유무에 따라 판정이 다르다 — "
+                f"있을 때 {with_future.verdict.value}(score={with_future.score}), "
                 f"없을 때 {without_future.verdict.value}(score={without_future.score})"
             )
 
@@ -378,28 +440,37 @@ def replay(
     config: AppConfig,
     *,
     regime: MarketRegime = MarketRegime.CAUTION,
+    regime_by_date: RegimeByDate | None = None,
+    stage_by_date: StageByDate | None = None,
+    rs_percentile_by_date: RsByDate | None = None,
 ) -> list[Signal]:
     """워밍업 이후 모든 봉에서 전략을 평가한다. 게이트 탈락도 기록한다.
 
     각 시점에서 전략이 보는 것은 df.iloc[:t+1]뿐이다.
+    진입(entry_date/entry_price)은 verdict가 BUY일 때만 기록한다 —
+    게이트 통과는 진입이 아니다.
     """
     backtest = config.backtest
     offset = backtest.entry_offset_bars
     signals: list[Signal] = []
 
     for position in _evaluation_range(df, backtest):
-        verdict = _evaluate_at(strategy, ticker, df, position, config, regime=regime)
+        verdict = _evaluate_at(
+            strategy, ticker, df, position, config, regime=regime,
+            regime_by_date=regime_by_date, stage_by_date=stage_by_date,
+            rs_percentile_by_date=rs_percentile_by_date,
+        )
         entry_position = position + offset
-        gate_passed = verdict.gate.passed
+        entered = verdict.verdict is Verdict.BUY
 
         signals.append(
             Signal(
                 as_of=df.index[position].date(),
-                gate_passed=gate_passed,
+                gate_passed=verdict.gate.passed,
                 verdict=verdict.verdict,
                 score=verdict.score,
-                entry_date=df.index[entry_position].date() if gate_passed else None,
-                entry_price=float(df["open"].iloc[entry_position]) if gate_passed else None,
+                entry_date=df.index[entry_position].date() if entered else None,
+                entry_price=float(df["open"].iloc[entry_position]) if entered else None,
             )
         )
     return signals
@@ -412,20 +483,29 @@ def evaluate_results(
     config: AppConfig,
     *,
     regime: MarketRegime = MarketRegime.CAUTION,
+    regime_by_date: RegimeByDate | None = None,
+    stage_by_date: StageByDate | None = None,
+    rs_percentile_by_date: RsByDate | None = None,
     run_audit: bool = True,
 ) -> list[BacktestResult]:
     """기간별 BacktestResult 목록. 전략끼리 합산하지 않는다.
 
+    집계는 verdict 기준 3집단이다: 진입(BUY) / 통과-미진입 / 게이트 탈락.
     벤치마크는 **같은 종목의 무조건부 매수**다 (모든 봉에서 진입한 경우의 분포).
     이것이 'AlwaysBuy는 buy-and-hold와 같아야 한다'는 예측의 기준선이 된다.
     지수(SPY/KOSPI) 대비 비교는 유니버스 데이터가 필요하므로 Phase 3.5다.
     """
     backtest = config.backtest
     offset = backtest.entry_offset_bars
-    signals = replay(strategy, ticker, df, config, regime=regime)
+    injected = {
+        "regime_by_date": regime_by_date,
+        "stage_by_date": stage_by_date,
+        "rs_percentile_by_date": rs_percentile_by_date,
+    }
+    signals = replay(strategy, ticker, df, config, regime=regime, **injected)
 
     audit = (
-        audit_lookahead(strategy, ticker, df, config, regime=regime)
+        audit_lookahead(strategy, ticker, df, config, regime=regime, **injected)
         if run_audit
         else LookaheadAudit(0, (), bool(getattr(strategy, "requires_full_history", False)))
     )
@@ -439,7 +519,8 @@ def evaluate_results(
     results: list[BacktestResult] = []
 
     for horizon in backtest.horizons:
-        taken: list[Outcome] = []
+        entered: list[Outcome] = []
+        not_entered: list[Outcome] = []
         rejected: list[Outcome] = []
         benchmark: list[Outcome] = []
 
@@ -453,7 +534,12 @@ def evaluate_results(
             benchmark.append(
                 Outcome(signal.as_of, None, outcome.return_pct, outcome.max_adverse_pct)
             )
-            (taken if signal.gate_passed else rejected).append(outcome)
+            if not signal.gate_passed:
+                rejected.append(outcome)
+            elif signal.entered:
+                entered.append(outcome)
+            else:
+                not_entered.append(outcome)
 
         results.append(
             BacktestResult(
@@ -461,10 +547,11 @@ def evaluate_results(
                 ticker=ticker,
                 horizon=horizon,
                 bars_evaluated=len(signals),
-                signals=summarize("게이트 통과", taken, backtest),
+                signals=summarize("진입(BUY)", entered, backtest),
+                gate_passed_not_entered=summarize("통과-미진입", not_entered, backtest),
                 gate_rejected=summarize("게이트 탈락", rejected, backtest),
                 benchmark=summarize("무조건부 매수(벤치마크)", benchmark, backtest),
-                by_score_bucket=bucket_outcomes(taken, backtest),
+                by_score_bucket=bucket_outcomes(entered, backtest),
                 lookahead=audit,
             )
         )

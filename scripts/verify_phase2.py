@@ -3,8 +3,11 @@
 더미 전략 3종의 결과는 **미리 예측된다**. 예측이 맞으면 하네스가 정상이고,
 어긋나면 전략이 아니라 하네스를 의심해야 한다.
 
-  1. AlwaysBuy        ~= buy-and-hold (초과수익 정확히 0)
-  2. Random           ~= 시장 평균 (초과수익이 표준오차 범위 안)
+  1. AlwaysBuy        ~= buy-and-hold — 하네스를 거치지 않고 pandas로 **독립 계산**한
+                         무조건부 평균과 비교한다 (하네스 내부 벤치마크와의 비교는
+                         같은 계산에서 나오므로 동어반복이라 증명력이 없다)
+  2. Random           ~= 시장 평균 (초과수익이 표준오차 범위 안. 보유기간이 겹쳐
+                         수익률이 자기상관되므로 유효표본 n/horizon으로 보정)
   3. PerfectHindsight -> look-ahead 감사에 적발
 
     python scripts/verify_phase2.py
@@ -14,6 +17,8 @@
 from __future__ import annotations
 
 import argparse
+import math
+import statistics
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -44,6 +49,29 @@ console = Console()
 
 TICKERS = ["AAPL", "005930.KS"]
 SIGMA = 2.0  # Random 판정에 쓰는 표준오차 배수
+EXCESS_HIGHLIGHT_PCT = 5.0  # 표시용 — 초과수익이 이보다 크면 빨간색으로 강조 (판정 아님)
+
+
+def independent_unconditional_mean_pct(df, config, horizon: int) -> float | None:
+    """하네스 코드를 전혀 쓰지 않고 계산한 '매 봉 진입' 평균 수익률.
+
+    예측 1의 기준선이다. 하네스 내부 벤치마크는 시그널과 같은 forward_outcome
+    호출에서 나오므로 그것과의 비교는 동어반복이다. 여기서는 진입 규칙
+    (시그널 다음 봉 시가 -> horizon-1봉 뒤 종가)을 별도 코드로 다시 구현해서,
+    하네스의 오프셋/정렬 배선이 틀리면 실제로 어긋나게 만든다.
+    """
+    bt = config.backtest
+    opens = df["open"].to_numpy(dtype=float)
+    closes = df["close"].to_numpy(dtype=float)
+    returns: list[float] = []
+    for position in range(bt.warmup_bars, len(df) - max(bt.horizons) - bt.entry_offset_bars):
+        entry_position = position + bt.entry_offset_bars
+        exit_position = entry_position + horizon - 1
+        if exit_position >= len(df) or opens[entry_position] <= 0.0:
+            continue
+        entry = opens[entry_position]
+        returns.append((closes[exit_position] - entry) / entry * 100.0)
+    return statistics.fmean(returns) if returns else None
 
 
 def load(ticker: str) -> pd.DataFrame:
@@ -89,7 +117,9 @@ def show_setup(config, tickers: list[str], frames: dict[str, pd.DataFrame]) -> N
     table.add_row("종목", ", ".join(f"{t} ({len(frames[t])}봉)" for t in tickers))
     table.add_row("워밍업", f"{bt.warmup_bars}봉")
     table.add_row("보유기간", ", ".join(f"{h}봉" for h in bt.horizons))
-    table.add_row("진입 규칙", f"시그널 봉의 {bt.entry_offset_bars}봉 뒤 **시가**")
+    table.add_row(
+        "진입 규칙", f"verdict=BUY일 때만, 시그널 봉의 {bt.entry_offset_bars}봉 뒤 **시가**"
+    )
     table.add_row("벤치마크", "같은 종목 무조건부 매수 (지수 대비는 Phase 3.5)")
     table.add_row("표본 경고 기준", f"n < {bt.min_sample_size}")
     console.print(table)
@@ -116,7 +146,9 @@ def show_comparison(results: dict[str, list[BacktestResult]], ticker: str) -> No
                 else f"[red]적발 {len(result.lookahead.violations)}[/red]"
             )
             excess = result.excess_return_pct
-            excess_style = "red" if excess is not None and abs(excess) > 5.0 else "white"
+            excess_style = (
+                "red" if excess is not None and abs(excess) > EXCESS_HIGHLIGHT_PCT else "white"
+            )
             table.add_row(
                 name,
                 str(result.horizon),
@@ -134,33 +166,39 @@ def show_comparison(results: dict[str, list[BacktestResult]], ticker: str) -> No
 
 
 def show_gate_effect(results: dict[str, list[BacktestResult]], ticker: str) -> None:
-    """게이트가 실제로 나쁜 종목을 거르는지 — 통과군 vs 탈락군 직접 비교."""
+    """진입/미진입/탈락 3집단 직접 비교 — 게이트와 verdict가 각각 무엇을 거르는지."""
     table = Table(
-        title=f"[bold]{ticker}[/bold] 게이트 통과군 vs 탈락군 (20봉)",
+        title=f"[bold]{ticker}[/bold] 진입(BUY) vs 통과-미진입 vs 게이트 탈락 (20봉)",
         header_style="bold cyan",
     )
-    for col in ("전략", "통과 n", "통과 평균%", "탈락 n", "탈락 평균%", "차이%p"):
+    columns = ("전략", "진입 n", "진입 평균%", "미진입 n", "미진입 평균%",
+               "탈락 n", "탈락 평균%", "진입-탈락%p")
+    for col in columns:
         table.add_column(col, justify="left" if col == "전략" else "right")
 
     for name, result_list in results.items():
         result = result_list[0]
-        passed, rejected = result.signals, result.gate_rejected
-        if passed.mean_return_pct is None or rejected.mean_return_pct is None:
+        entered = result.signals
+        not_entered = result.gate_passed_not_entered
+        rejected = result.gate_rejected
+        if entered.mean_return_pct is None or rejected.mean_return_pct is None:
             gap = "[dim]n/a[/dim]"
         else:
-            gap = num(passed.mean_return_pct - rejected.mean_return_pct, sign=True)
+            gap = num(entered.mean_return_pct - rejected.mean_return_pct, sign=True)
         table.add_row(
             name,
-            sample(passed),
-            num(passed.mean_return_pct, sign=True),
+            sample(entered),
+            num(entered.mean_return_pct, sign=True),
+            sample(not_entered),
+            num(not_entered.mean_return_pct, sign=True),
             sample(rejected),
             num(rejected.mean_return_pct, sign=True),
             gap,
         )
     console.print(table)
     console.print(
-        "  [dim]더미 전략이므로 차이가 0 근처인 것이 정상이다. "
-        "진짜 전략이라면 통과군이 유의하게 높아야 한다.[/dim]"
+        "  [dim]더미 전략은 통과 즉시 BUY라 미진입이 0이고 차이도 0 근처인 것이 정상이다. "
+        "진짜 전략이라면 진입군이 유의하게 높아야 한다.[/dim]"
     )
 
 
@@ -185,11 +223,15 @@ def show_score_buckets(result: BacktestResult) -> None:
             num(bucket.mean_max_adverse_pct, sign=True),
         )
     console.print(table)
-    console.print("  [dim]! 표시는 표본 부족(n < 30) — 숫자를 믿지 말 것[/dim]")
+    console.print(
+        f"  [dim]! 표시는 표본 부족(n < {result.signals.min_sample_size}) — 숫자를 믿지 말 것[/dim]"
+    )
 
 
 def check_predictions(
     all_results: dict[str, dict[str, list[BacktestResult]]],
+    frames: dict[str, pd.DataFrame],
+    config,
 ) -> list[bool]:
     """세 예측이 맞는지 명시적으로 판정한다. 억지로 맞추지 않는다."""
     table = Table(
@@ -202,30 +244,47 @@ def check_predictions(
 
     for ticker, results in all_results.items():
         result = results["always_buy"][0]
-        excess = result.excess_return_pct
-        ok = excess is not None and abs(excess) < 1e-9
+        # 하네스 내부 벤치마크가 아니라 위에서 pandas로 독립 계산한 값과 비교한다.
+        # 내부 벤치마크 대비 초과수익은 같은 계산에서 나와 항상 0이므로 증명력이 없다.
+        independent = independent_unconditional_mean_pct(
+            frames[ticker], config, result.horizon
+        )
+        measured = result.signals.mean_return_pct
+        if independent is None or measured is None:
+            ok, detail = False, "n/a"
+        else:
+            diff = measured - independent
+            ok = abs(diff) < 1e-9
+            detail = f"하네스 {measured:+.6f}% vs 독립계산 {independent:+.6f}% (차 {diff:+.2e})"
         verdicts.append(ok)
         table.add_row(
             "1",
-            "AlwaysBuy = buy-and-hold",
+            "AlwaysBuy = 독립 계산한 buy-and-hold",
             ticker,
-            f"초과수익 {excess:+.12f}%p" if excess is not None else "n/a",
+            detail,
             "[green]PASS[/green]" if ok else "[red]FAIL[/red]",
         )
 
     for ticker, results in all_results.items():
         result = results["random"][0]
         excess = result.excess_return_pct
-        stderr = result.signals.stderr_return_pct
-        if excess is None or stderr is None:
+        stats = result.signals
+        # 보유기간이 겹치는 수익률은 자기상관이 강해 iid 가정 SE가 과소평가된다.
+        # 유효 표본을 n/horizon으로 보수적으로 잡아 보정한다.
+        if excess is None or stats.stdev_return_pct is None:
             ok, detail = False, "n/a"
         else:
+            effective_n = max(1, stats.n // result.horizon)
+            stderr = stats.stdev_return_pct / math.sqrt(effective_n)
             ok = abs(excess) < SIGMA * stderr
-            detail = f"초과 {excess:+.3f}%p vs {SIGMA:.0f}SE {SIGMA * stderr:.3f}%p"
+            detail = (
+                f"초과 {excess:+.3f}%p vs {SIGMA:.0f}SE {SIGMA * stderr:.3f}%p "
+                f"(유효표본 {effective_n})"
+            )
         verdicts.append(ok)
         table.add_row(
             "2",
-            f"Random = 시장평균 (|초과| < {SIGMA:.0f}SE)",
+            f"Random = 시장평균 (|초과| < {SIGMA:.0f}SE, 유효표본 보정)",
             ticker,
             detail,
             "[green]PASS[/green]" if ok else "[red]FAIL[/red]",
@@ -293,7 +352,7 @@ def main() -> int:
     show_score_buckets(all_results["AAPL"]["random"][0])
     console.print()
 
-    verdicts = check_predictions(all_results)
+    verdicts = check_predictions(all_results, frames, config)
     console.print()
 
     if all(verdicts):

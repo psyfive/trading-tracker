@@ -30,6 +30,7 @@ from core.types import (
     GateResult,
     IndicatorSnapshot,
     MarketRegime,
+    MinerviniSetup,
     RiskPlan,
     RLevel,
     ScoreComponent,
@@ -88,7 +89,11 @@ def make_verdict(*, gate_passed: bool = True, name: str = "minervini") -> Strate
         components=[
             ScoreComponent(id="vcp", label="VCP 수축", earned=18.0, max=25.0, detail="3회 수축")
         ],
-        setup_metrics=SetupMetrics(pivot_price=185.0, to_pivot_pct=1.4, contraction_ratio=0.38),
+        setup_metrics=SetupMetrics(
+            pivot_price=185.0,
+            to_pivot_pct=1.4,
+            detail=MinerviniSetup(contraction_ratio=0.38),
+        ),
         verdict=Verdict.BUY,
     )
 
@@ -107,11 +112,39 @@ def progress_from(verdicts: list[StrategyVerdict]) -> list[GateProgress]:
     ]
 
 
+def derive_agreement(verdicts: list[StrategyVerdict]) -> Agreement:
+    """Agreement enum docstring의 정의 그대로. validator가 이 파생을 강제한다."""
+    total = len(verdicts)
+    n_buy = sum(v.verdict is Verdict.BUY for v in verdicts)
+    if n_buy == 0:
+        return Agreement.NONE
+    if n_buy == total:
+        return Agreement.UNANIMOUS_BUY
+    if n_buy * 2 > total:
+        return Agreement.MAJORITY_BUY
+    return Agreement.SPLIT
+
+
+def consensus_from(verdicts: list[StrategyVerdict]) -> ConsensusSummary:
+    counts: dict[Verdict, int] = {}
+    for v in verdicts:
+        counts[v.verdict] = counts.get(v.verdict, 0) + 1
+    return ConsensusSummary(
+        total_strategies=len(verdicts),
+        verdict_counts=counts,
+        buy_strategies=[v.strategy_name for v in verdicts if v.verdict is Verdict.BUY],
+        gate_passed_strategies=[v.strategy_name for v in verdicts if v.gate.passed],
+        gate_progress=progress_from(verdicts),
+        agreement=derive_agreement(verdicts),
+    )
+
+
 def make_report(
     *,
     is_bar_complete: bool = True,
     verdicts: list[StrategyVerdict] | None = None,
     warnings: list[DiagnosticWarning] | None = None,
+    consensus: ConsensusSummary | None = None,
 ) -> DiagnosisReport:
     verdicts = [make_verdict()] if verdicts is None else verdicts
     warnings = [] if warnings is None else warnings
@@ -132,14 +165,7 @@ def make_report(
         stage=Stage.STAGE_2,
         indicators=IndicatorSnapshot(sma200=164.1, rsi14=61.2, rs_percentile=88.0),
         strategy_verdicts=verdicts,
-        consensus=ConsensusSummary(
-            total_strategies=len(verdicts),
-            verdict_counts={Verdict.BUY: sum(v.verdict is Verdict.BUY for v in verdicts)},
-            buy_strategies=[v.strategy_name for v in verdicts if v.verdict is Verdict.BUY],
-            gate_passed_strategies=[v.strategy_name for v in verdicts if v.gate.passed],
-            gate_progress=progress_from(verdicts),
-            agreement=Agreement.UNANIMOUS_BUY,
-        ),
+        consensus=consensus_from(verdicts) if consensus is None else consensus,
         warnings=warnings,
     )
 
@@ -440,6 +466,85 @@ def test_consensus_total_must_match_verdicts():
         )
 
 
+def test_empty_gate_progress_cannot_bypass_validation():
+    """전략이 있는데 gate_progress가 비어 있으면 조립 코드가 채우는 것을 잊은 것이다."""
+    verdicts = [make_verdict()]
+    consensus = consensus_from(verdicts).model_copy(update={"gate_progress": []})
+    with pytest.raises(ValidationError, match="gate_progress"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_progress_ratio_must_match_counts():
+    """정렬 키로 쓰는 바로 그 값이므로 pass_count/total과 어긋나면 거부한다."""
+    verdicts = [make_verdict()]
+    progress = progress_from(verdicts)
+    tampered = [progress[0].model_copy(update={"progress_ratio": 0.5})]
+    consensus = consensus_from(verdicts).model_copy(update={"gate_progress": tampered})
+    with pytest.raises(ValidationError, match="progress_ratio"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_progress_ratio_tolerates_rounding():
+    """목업처럼 소수 4자리로 반올림된 값(2/3 -> 0.6667)은 통과해야 한다."""
+    verdicts = [make_verdict()]
+    progress = [progress_from(verdicts)[0].model_copy(update={"progress_ratio": 1.0001})]
+    consensus = consensus_from(verdicts).model_copy(update={"gate_progress": progress})
+    make_report(verdicts=verdicts, consensus=consensus)  # ValidationError가 없어야 한다
+
+
+def test_verdict_counts_must_match_verdicts():
+    verdicts = [make_verdict()]
+    consensus = consensus_from(verdicts).model_copy(
+        update={"verdict_counts": {Verdict.BUY: 3}}
+    )
+    with pytest.raises(ValidationError, match="verdict_counts"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_buy_strategies_must_match_verdicts():
+    """BUY 전략 누락은 프론트에서 '매수 의견 없음'으로 위장된다. 조립 시점에 죽어야 한다."""
+    verdicts = [make_verdict()]
+    consensus = consensus_from(verdicts).model_copy(update={"buy_strategies": []})
+    with pytest.raises(ValidationError, match="buy_strategies"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_gate_passed_strategies_must_match_verdicts():
+    verdicts = [make_verdict()]
+    consensus = consensus_from(verdicts).model_copy(
+        update={"gate_passed_strategies": ["minervini", "ghost"]}
+    )
+    with pytest.raises(ValidationError, match="gate_passed_strategies"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_agreement_is_derived_not_free():
+    """1 BUY / 3 전략은 SPLIT이다. UNANIMOUS_BUY라고 주장하면 거부한다."""
+    verdicts = [
+        make_verdict(name="weinstein"),
+        make_verdict(gate_passed=False, name="minervini"),
+        make_verdict(gate_passed=False, name="canslim"),
+    ]
+    assert derive_agreement(verdicts) is Agreement.SPLIT
+    consensus = consensus_from(verdicts).model_copy(
+        update={"agreement": Agreement.UNANIMOUS_BUY}
+    )
+    with pytest.raises(ValidationError, match="agreement"):
+        make_report(verdicts=verdicts, consensus=consensus)
+
+
+def test_agreement_counts_rejected_as_non_buy():
+    """분모는 전체 전략 수다. 게이트 탈락도 '비-BUY 의견'으로 센다 (examples와 일치)."""
+    two_of_three = [
+        make_verdict(name="a"),
+        make_verdict(name="b"),
+        make_verdict(gate_passed=False, name="c"),
+    ]
+    assert derive_agreement(two_of_three) is Agreement.MAJORITY_BUY
+    report = make_report(verdicts=two_of_three)
+    assert report.consensus.agreement is Agreement.MAJORITY_BUY
+
+
 def test_verdicts_stay_separate():
     verdicts = [make_verdict(name="minervini"), make_verdict(gate_passed=False, name="canslim")]
     payload = json.loads(make_report(verdicts=verdicts).model_dump_json())
@@ -463,6 +568,16 @@ def test_strategy_dependent_fields_are_not_indicators(field_name):
     assert field_name in SetupMetrics.model_fields
 
 
+@pytest.mark.parametrize("field_name", ["contraction_ratio", "volume_dryup_ratio"])
+def test_vcp_vocabulary_lives_in_the_strategy_detail(field_name):
+    """VCP 어휘는 공통 코어가 아니라 미너비니 detail에 있어야 한다.
+
+    공통 코어에 두면 와인스타인·CANSLIM이 채울 수 없는 필드를 이고 다니게 된다.
+    """
+    assert field_name not in SetupMetrics.model_fields
+    assert field_name in MinerviniSetup.model_fields
+
+
 def test_setup_metrics_live_on_strategy_verdict():
     verdict = make_verdict()
     assert verdict.setup_metrics.pivot_price == 185.0
@@ -473,7 +588,7 @@ def test_setup_metrics_default_to_empty():
     """미제공 시 전 필드 None. 0으로 채우지 않는다."""
     metrics = make_verdict(gate_passed=False).setup_metrics
     assert metrics.pivot_price is None
-    assert metrics.contraction_ratio is None
+    assert metrics.detail is None
 
 
 def test_each_strategy_keeps_its_own_pivot():
@@ -521,8 +636,8 @@ def test_scale_words_are_suffixes_not_prefixes():
         (IndicatorSnapshot, "above_52w_low_pct"),
         (IndicatorSnapshot, "volume_ratio"),
         (IndicatorSnapshot, "rs_percentile"),
-        (SetupMetrics, "contraction_ratio"),
-        (SetupMetrics, "volume_dryup_ratio"),
+        (MinerviniSetup, "contraction_ratio"),
+        (MinerviniSetup, "volume_dryup_ratio"),
         (SetupMetrics, "base_depth_pct"),
     ],
 )

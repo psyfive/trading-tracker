@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "ticker": "AVGO",
   "as_of": "2026-08-17",
   "generated_at": "2026-08-18T00:15:00Z",
@@ -63,6 +63,7 @@
             "threshold": 178.25,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 214.60 > 150일선 178.25 (200일선 169.80도 상회)"
           },
           {
@@ -73,6 +74,7 @@
             "threshold": 169.8,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "150일선 178.25 > 200일선 169.80"
           },
           {
@@ -83,6 +85,7 @@
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "200일선 20일 기울기 +3.1%"
           },
           {
@@ -93,6 +96,7 @@
             "threshold": 178.25,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "50일선 196.40 > 150일선 178.25"
           },
           {
@@ -103,6 +107,7 @@
             "threshold": 196.4,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 214.60 > 50일선 196.40 (+9.3%)"
           },
           {
@@ -113,6 +118,7 @@
             "threshold": 30.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 저점 118.05 대비 +81.8%"
           },
           {
@@ -123,6 +129,7 @@
             "threshold": -25.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 고점 219.40 대비 -2.2%"
           },
           {
@@ -133,6 +140,7 @@
             "threshold": 70.0,
             "comparator": "GTE",
             "unit": null,
+            "shortfall_pct": null,
             "reason": "RS 백분위 92 (유니버스 상위 8%)"
           }
         ],
@@ -187,8 +195,12 @@
         "to_pivot_pct": 1.03,
         "base_length_days": 34,
         "base_depth_pct": 14.2,
-        "contraction_ratio": 0.31,
-        "volume_dryup_ratio": 0.58
+        "detail": {
+          "kind": "minervini",
+          "contraction_count": 3,
+          "contraction_ratio": 0.31,
+          "volume_dryup_ratio": 0.58
+        }
       },
       "verdict": "BUY",
       "notes": [
@@ -212,6 +224,7 @@
             "threshold": 178.25,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 214.60 > 30주선 178.25"
           },
           {
@@ -222,6 +235,7 @@
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "30주선 20일 기울기 +4.9%"
           },
           {
@@ -232,6 +246,7 @@
             "threshold": null,
             "comparator": "BOOL",
             "unit": null,
+            "shortfall_pct": null,
             "reason": "30주선 상향 돌파 후 12주 경과, 고점·저점 절상 유지"
           },
           {
@@ -242,6 +257,7 @@
             "threshold": 1.0,
             "comparator": "GTE",
             "unit": "x",
+            "shortfall_pct": null,
             "reason": "거래량이 50일 평균의 1.24배"
           }
         ],
@@ -289,8 +305,7 @@
         "to_pivot_pct": -7.55,
         "base_length_days": 62,
         "base_depth_pct": 22.4,
-        "contraction_ratio": null,
-        "volume_dryup_ratio": null
+        "detail": null
       },
       "verdict": "BUY",
       "notes": [

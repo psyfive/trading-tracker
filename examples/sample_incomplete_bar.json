@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "ticker": "TSLA",
   "as_of": "2026-08-18",
   "generated_at": "2026-08-18T17:42:00Z",
@@ -63,6 +63,7 @@
             "threshold": 288.75,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 338.20 > 150일선 288.75 (200일선 271.30도 상회)"
           },
           {
@@ -73,6 +74,7 @@
             "threshold": 271.3,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "150일선 288.75 > 200일선 271.30"
           },
           {
@@ -83,6 +85,7 @@
             "threshold": 0.0,
             "comparator": "GT",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "200일선 20일 기울기 +2.8%"
           },
           {
@@ -93,6 +96,7 @@
             "threshold": 288.75,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "50일선 312.40 > 150일선 288.75"
           },
           {
@@ -103,6 +107,7 @@
             "threshold": 312.4,
             "comparator": "GT",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "주가 338.20 > 50일선 312.40 (+8.3%) — 다만 장중 값이므로 종가 확정 아님"
           },
           {
@@ -113,6 +118,7 @@
             "threshold": 30.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 저점 182.00 대비 +85.8%"
           },
           {
@@ -123,6 +129,7 @@
             "threshold": -25.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "52주 고점 361.40 대비 -6.4%"
           },
           {
@@ -133,6 +140,7 @@
             "threshold": 70.0,
             "comparator": "GTE",
             "unit": null,
+            "shortfall_pct": null,
             "reason": "RS 백분위 86"
           }
         ],
@@ -180,8 +188,12 @@
         "to_pivot_pct": 1.27,
         "base_length_days": 21,
         "base_depth_pct": 11.8,
-        "contraction_ratio": 0.42,
-        "volume_dryup_ratio": null
+        "detail": {
+          "kind": "minervini",
+          "contraction_count": 3,
+          "contraction_ratio": 0.42,
+          "volume_dryup_ratio": null
+        }
       },
       "verdict": "WATCH",
       "notes": [
@@ -206,6 +218,7 @@
             "threshold": 3.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "20일 평균 일간 레인지 4.8%"
           },
           {
@@ -216,6 +229,7 @@
             "threshold": 3000000.0,
             "comparator": "GTE",
             "unit": "$",
+            "shortfall_pct": null,
             "reason": "50일 평균 거래대금 248억 달러"
           },
           {
@@ -226,6 +240,7 @@
             "threshold": 30.0,
             "comparator": "GTE",
             "unit": "%",
+            "shortfall_pct": null,
             "reason": "컨솔리데이션 직전 8주간 +46.2%"
           },
           {
@@ -236,6 +251,7 @@
             "threshold": 10.0,
             "comparator": "GTE",
             "unit": "days",
+            "shortfall_pct": null,
             "reason": "14거래일 횡보 중"
           },
           {
@@ -246,6 +262,7 @@
             "threshold": 1.5,
             "comparator": "GTE",
             "unit": "x",
+            "shortfall_pct": null,
             "reason": "당일 봉 미완성 — 13:42 ET 기준 부분 거래량(41.2M)으로는 판정 불가"
           }
         ],
@@ -264,8 +281,7 @@
         "to_pivot_pct": null,
         "base_length_days": null,
         "base_depth_pct": null,
-        "contraction_ratio": null,
-        "volume_dryup_ratio": null
+        "detail": null
       },
       "verdict": "REJECTED_BY_GATE",
       "notes": [

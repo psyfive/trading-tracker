@@ -5,18 +5,33 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 2 완료)
+## 현재 상태 (Phase 3 완료)
 
-계약 + 데이터 + 지표 + 백테스트 하네스까지 구현됐다. **진짜 전략은 아직 없다.**
+계약(v1.1.0) + 데이터 + 지표 + 하네스 + **미너비니 전략 1종**까지 구현됐다.
 
 - **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
-  `data/fetcher.py`, `tests/fixtures/` 고정 CSV 2종
+  `data/fetcher.py`, `tests/fixtures/` 고정 CSV 4종(종목 2 + 지수 2)
 - **Phase 2 (하네스)**: `backtest/harness.py`, `strategies/base.py`(템플릿 메서드),
   `strategies/dummy.py`(검증용 더미 3종), `core/context.py`
-- **미구현**: `strategies/minervini.py` 등 진짜 전략, `regime/`, `risk/`, `render/`,
-  `data/universe.py`(RS는 Phase 3.5), `main.py`의 진단 파이프라인
+- **Phase 3 (전략)**: `strategies/minervini.py`, `regime/market.py`,
+  `data/universe.py`의 근사 RS
+- **미구현**: 나머지 전략 3종(와인스타인/CANSLIM/Qullamaggie), `risk/planner.py`,
+  `render/`, 진짜 유니버스 RS(Phase 3.5), `main.py`의 진단 파이프라인
 - `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+
+### 전략을 추가할 때 반드시 볼 것
+
+`strategies/minervini.py`가 참조 구현이다. 새 전략은 이 구조를 따른다:
+
+- `build_gate_check()`로만 GateCheck를 만든다 — `shortfall_pct`(미달 폭) 계산이
+  여기 한 곳에 있다. 전략마다 계산하면 프론트가 자기 방식으로 다시 계산하게 된다.
+- `build_gate_result()`로만 GateResult를 만든다 — UNAVAILABLE 정책이 여기 고정된다.
+- 전략 고유 셋업 수치는 `SetupMetrics.detail`에 **전략별 타입**으로 넣는다
+  (`MinerviniSetup` 참조). 공통 코어(pivot/base)는 그대로 쓰고, 새 타입을
+  `SetupDetail` 유니온에 덧붙인다 — 이는 additive 변경이다.
+- 게이트 체크의 `actual`은 **측정값**이고 `threshold`가 기준값이다. 둘에 같은 값을
+  넣으면 게이트 판정은 맞아 보이지만 미달 폭이 항상 0이 되어 근접도 정렬이 죽는다.
 
 ### 전략을 만들기 전에 자를 먼저 만들었다
 
@@ -28,6 +43,25 @@
   - `Random` -> 초과수익이 2 표준오차 안
   - `PerfectHindsight` -> look-ahead 감사에 적발
 
+### 주입 시리즈(regime / stage / RS)의 시점 정합성은 산출 코드 책임이다
+
+`regime/market.py`와 `data/universe.py`의 `*_series()`는 날짜 t의 값을 t 이하
+데이터로만 계산한다. 하네스의 look-ahead 감사는 양쪽 평가에 **같은 시리즈**를 쓰므로
+시리즈 안에 스며든 미래 참조를 잡지 못한다. `tests/test_regime_and_rs.py`가
+'전체 데이터로 만든 시리즈의 t값 == t에서 잘라 계산한 값'을 검증해 이를 잠근다.
+
+### RS는 Phase 3.5 전까지 근사치다 — 재는 대상이 다르다
+
+`approximate_rs_percentile_series()`는 지수 대비 상대강도를 **자기 과거 분포**에서
+순위화한다. 진짜 유니버스 백분위와 재는 대상이 다르다:
+
+- 진짜 백분위: "다른 종목들보다 강한가" (수준)
+- 현재 근사: "자기 과거보다 상대강도가 붙고 있는가" (가속도)
+
+꾸준히 시장을 이기는 종목은 중간 점수를 받는다. 따라서 미너비니 RS 게이트(>= 70)는
+지금 '강한 종목'이 아니라 '최근 상대강도가 붙는 종목'을 고른다.
+이 차이를 잊으면 백테스트 결과를 오독한다. `rs_universe_warning()`을 리포트에 실을 것.
+
 ### look-ahead 방지는 두 겹이다
 
 1. **구조적**: 시점 t의 `StockContext`에는 `df.iloc[:t+1]`만 들어간다. 미래 봉이
@@ -37,6 +71,13 @@
    t에서 잘렸을 때의 판정이 다르면 미래를 쓴 것이다.
 
 진입가는 **시그널 다음 봉 시가**다. 시그널 봉의 종가로 사는 것은 그 종가를 미리 아는 것이다.
+진입 기준은 **verdict == BUY**다. 게이트 통과는 진입이 아니다 — WATCH/HOLD/AVOID를 매수로
+집계하면 '전략 성과'가 아니라 '게이트 성과'를 재는 것이 된다. 하네스는 진입(BUY) /
+통과-미진입 / 게이트 탈락 3집단을 분리 집계한다.
+
+stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스트에서 쓰려면 호출부가
+`*_by_date` 매핑으로 주입하며, **주입 시리즈 자체가 시점별(point-in-time)로 계산된 것**이어야
+한다. 감사는 주입 시리즈 안의 look-ahead까지는 잡지 못한다 (시리즈 산출 코드의 책임).
 
 ### 테스트는 네트워크를 타지 않는다
 
@@ -57,6 +98,13 @@
 - 추세 조건을 가산점 항목으로 옮기지 말 것. 이것이 이 프로젝트의 핵심 설계다.
 - 이 순서는 `StrategyBase.evaluate()` 템플릿 메서드와 `StrategyVerdict`의
   `_gate_first_invariant` validator로 **구조적으로** 강제된다. 우회하지 말 것.
+- `GateResult`는 `strategies/base.py`의 `build_gate_result()`로만 만든다. **UNAVAILABLE
+  정책이 여기 하나로 고정된다**: UNAVAILABLE은 PASS로 세지 않으므로 AND 게이트를 막는다
+  (확인 못 한 조건은 충족이 아니다). FAIL과의 구분은 `unavailable_count`로 보존된다.
+- **셋업 판정(detect_setup / build_setup_metrics)은 채점이 아니다.** 게이트 탈락 종목에도
+  수행한다. 근소 탈락(7/8) 종목이야말로 피벗 근접도를 보고 싶은 대상이다.
+- 전략은 **결정론**이어야 한다: 같은 `StockContext`에는 항상 같은 판정. look-ahead 감사가
+  같은 시점을 두 번 평가해 비교하므로, 호출 간 상태에 의존하면 감사가 깨지거나 무력화된다.
 
 ### 2. 전략은 플러그인
 
@@ -127,6 +175,10 @@
   - VCP 수축도와 거래량 건조도는 `_ratio`다 (`contraction_ratio`, `volume_dryup_ratio`).
 - 가격/금액은 `float`. 통화 변환은 하지 않는다 (티커 상장 통화 그대로).
 - enum은 이름과 값을 일치시킨다 (`RISK_ON = "RISK_ON"`). 계약 테스트가 이를 잠근다.
+- `ConsensusSummary`의 필드는 전부 `strategy_verdicts`의 **중복 저장**이며, DiagnosisReport
+  validator가 원본과의 일치를 전부 강제한다 (`verdict_counts` / `buy_strategies` /
+  `gate_passed_strategies` / `gate_progress`·`progress_ratio` / `agreement`).
+  `agreement`의 분모는 전체 전략 수다 — 게이트 탈락도 '비-BUY 의견'으로 센다.
 - **미확정 필드를 계약에 넣지 않는다.** 소속 위치나 의미가 아직 정해지지 않았으면
   넣지 말고, 확정되는 Phase에서 `SCHEMA_VERSION`을 올리며 추가한다.
   (예: `PositionState`는 enum만 정의되어 있고 이를 참조하는 필드는 없다.)
@@ -160,7 +212,9 @@
 | `backtest/harness.py` | 과거 시점 재현 검증 러너 |
 | `render/cli.py` | rich 렌더러 |
 | `render/json_out.py` | 프론트엔드용 직렬화 (유일한 진입점) |
+| `strategies/dummy.py` | 하네스 검증용 더미 3종. 매매 판단용이 아니다 |
 | `examples/*.json` | 손으로 채운 목업 리포트. 계약 변경 시 여기가 먼저 깨진다 |
+| `docs/review_phase0-2.md` | Phase 0~2 비판적 리뷰와 조치 내역 |
 
 ## 코딩 컨벤션
 
@@ -202,6 +256,10 @@
 
 ```bash
 python -m pytest tests/ -q
+```
+
+```bash
+python scripts/verify_phase3.py
 ```
 
 ```bash

@@ -15,6 +15,7 @@ StockContext에는 t 이하의 봉만 들어 있으므로 실수로는 미래를
 from __future__ import annotations
 
 import random
+import zlib
 
 import pandas as pd
 
@@ -28,19 +29,7 @@ from core.types import (
     SetupState,
     Verdict,
 )
-from strategies.base import StrategyBase
-
-
-def _gate(strategy: str, checks: list[GateCheck], *, required_all: bool = True) -> GateResult:
-    passed_count = sum(c.status is CheckStatus.PASS for c in checks)
-    return GateResult(
-        strategy=strategy,
-        passed=passed_count == len(checks) if required_all else passed_count > 0,
-        checks=checks,
-        pass_count=passed_count,
-        total=len(checks),
-        unavailable_count=sum(c.status is CheckStatus.UNAVAILABLE for c in checks),
-    )
+from strategies.base import StrategyBase, build_gate_result
 
 
 class AlwaysBuyStrategy(StrategyBase):
@@ -58,7 +47,7 @@ class AlwaysBuyStrategy(StrategyBase):
     MAX_SCORE = 100.0
 
     def build_gate(self, ctx: StockContext) -> GateResult:
-        return _gate(
+        return build_gate_result(
             self.name,
             [
                 GateCheck(
@@ -96,13 +85,17 @@ class AlwaysBuyStrategy(StrategyBase):
 class RandomStrategy(StrategyBase):
     """고정 시드 무작위. 게이트 통과 확률 50%, 점수 0~100 균등.
 
-    시드는 (seed, 봉 날짜)로 결정되므로 **같은 날짜는 항상 같은 결과**를 낸다.
+    시드는 (seed, 티커, 봉 날짜)로 결정되므로 **같은 입력은 항상 같은 결과**를 낸다.
     이것이 중요하다 — look-ahead 감사가 두 번 평가해 비교하는데,
     호출 순서에 따라 값이 달라지면 무작위 전략이 억울하게 적발된다.
+
+    티커를 시드에 섞는 이유: 날짜만 쓰면 여러 종목이 같은 거래일에 같은 난수를 받아
+    종목 간 검증이 독립 표본이 되지 못한다. 해시는 프로세스 간 재현을 위해
+    hash()가 아니라 crc32를 쓴다 (PYTHONHASHSEED 무관).
     """
 
     name = "random"
-    version = "1.0.0"
+    version = "1.1.0"
 
     MAX_SCORE = 100.0
 
@@ -111,13 +104,14 @@ class RandomStrategy(StrategyBase):
         self.gate_pass_probability = gate_pass_probability
 
     def _rng(self, ctx: StockContext) -> random.Random:
-        """봉 날짜에 고정된 난수원. 프로세스 간에도 재현된다."""
-        return random.Random(self.seed * 1_000_003 + ctx.as_of.toordinal())
+        """(seed, 티커, 봉 날짜)에 고정된 난수원. 프로세스 간에도 재현된다."""
+        ticker_mix = zlib.crc32(ctx.ticker.encode("utf-8"))
+        return random.Random(self.seed * 1_000_003 + ctx.as_of.toordinal() * 7 + ticker_mix)
 
     def build_gate(self, ctx: StockContext) -> GateResult:
         draw = self._rng(ctx).random()
         passed = draw < self.gate_pass_probability
-        return _gate(
+        return build_gate_result(
             self.name,
             [
                 GateCheck(
@@ -213,7 +207,7 @@ class PerfectHindsightStrategy(StrategyBase):
             actual = round(future, 4)
             reason = f"{self.lookahead_bars}봉 뒤 수익률 {future:+.2f}% (미래 참조!)"
 
-        return _gate(
+        return build_gate_result(
             self.name,
             [
                 GateCheck(
@@ -230,7 +224,14 @@ class PerfectHindsightStrategy(StrategyBase):
         )
 
     def build_score(self, ctx: StockContext) -> tuple[float, float, list[ScoreComponent]]:
-        future = self._future_return_pct(ctx) or 0.0
+        future = self._future_return_pct(ctx)
+        if future is None:
+            # 게이트 통과가 '미래를 봤다'를 함의하므로 여기 올 수 없다.
+            # None을 0.0으로 위장하는 것(`or 0.0`)은 이 프로젝트의 금지 패턴이다 —
+            # 참조 구현이 될 파일이므로 도달 불가 분기라도 시끄럽게 죽는다.
+            raise RuntimeError(
+                "build_score는 게이트 통과 후에만 불린다 — 미래 수익률이 없을 수 없다"
+            )
         score = max(0.0, min(self.MAX_SCORE, 50.0 + future * 2.0))
         return (
             score,

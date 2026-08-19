@@ -19,7 +19,10 @@ from config import DEFAULT_CONFIG  # noqa: E402
 from data.fetcher import fetch_ohlcv  # noqa: E402
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
-TICKERS = ["AAPL", "005930.KS"]
+# 종목 + 각 시장의 벤치마크 지수.
+# 벤치마크는 regime 판정(지수 vs 200일선, 분산일)과 상대강도(RS) 산출에 쓰인다.
+# 유니버스 백분위는 Phase 3.5이고, 그 전까지는 지수 대비 상대강도로 근사한다.
+TICKERS = ["AAPL", "005930.KS", "SPY", "^KS11"]
 
 
 def main() -> int:
