@@ -183,12 +183,42 @@ class MinerviniConfig:
 
 @dataclass(frozen=True)
 class WeinsteinConfig:
-    """와인스타인 Stage Analysis 임계값 (주봉 30주선 = 일봉 150선 근사)."""
+    """와인스타인 Stage Analysis 임계값 (주봉 30주선 = 일봉 150선 근사).
 
-    ma_period_daily: int = 150
+    게이트는 **미너비니와 겹치지 않는 조건만** 담는다. Stage 2 판정 자체가
+    '30주선 위 + 30주선 상승'을 함의하므로 그 둘을 별도 조건으로 또 세면
+    게이트 진행률(pass_count/total)이 부풀고 근접도 정렬이 망가진다.
+    Stage 2가 함의하지 않는 것 — 10주선, 시장 국면, RS, 유동성 — 만 남긴다.
+    """
+
+    # --- GATE ---
+    ma_period_daily: int = 150        # 30주선 근사. Stage 판정에 쓰는 선
+    ma_short_period_daily: int = 50   # 10주선 근사. Stage 2 안에서의 단기 이탈 필터
     slope_lookback: int = 20
     slope_min_pct: float = 0.0
-    volume_confirm_ratio: float = 2.0
+    min_rs_percentile: float = 50.0   # 미너비니(70)보다 낮다 — 국면 전환 초기를 잡는 방법론
+    min_dollar_volume: float = 1_000_000.0
+
+    # --- 저항선(Stage 1 거래범위 상단) 탐지 ---
+    range_lookback_days: int = 60
+    swing_fractal_k: int = 3
+    min_range_length_days: int = 20
+
+    # --- SCORE: 타이밍 채점 (게이트 통과 종목만) ---
+    volume_confirm_ratio: float = 2.0        # 돌파 거래량 / 50일 평균. 와인스타인의 확인 조건
+    pivot_proximity_pct: float = 3.0
+    extended_pct_above_pivot: float = 8.0    # 미너비니(5)보다 관대 — 진입 창이 더 길다
+    ideal_distance_from_ma_pct: float = 10.0 # 30주선 이격이 이 이내면 만점
+    max_distance_from_ma_pct: float = 30.0   # 이 이상 벌어지면 0점 (과확장)
+    ideal_stage2_age_days: int = 40          # Stage 2 진입 후 이 정도까지가 '초기'
+    max_stage2_age_days: int = 150           # 이보다 오래되면 신선도 0점
+    buy_min_score_pct: float = 60.0
+
+    # 배점 (합계 100)
+    weight_breakout_volume: float = 25.0
+    weight_stage_freshness: float = 25.0
+    weight_ma_distance: float = 25.0
+    weight_rs_strength: float = 25.0
 
 
 @dataclass(frozen=True)
@@ -202,12 +232,42 @@ class CanslimConfig:
 
 @dataclass(frozen=True)
 class QullamaggieConfig:
-    """Qullamaggie 브레이크아웃/EP 임계값."""
+    """Qullamaggie 브레이크아웃 셋업 임계값.
 
-    min_adr_pct: float = 3.0
+    이 방법론의 게이트는 추세 자체보다 **직전 급등(prior move)과 변동성·유동성**이다.
+    "이미 크게 오른 종목이 쉬고 있는 자리"를 사는 방식이라, 급등 이력이 없는 종목은
+    아무리 추세가 곱게 서 있어도 대상이 아니다.
+    """
+
+    # --- GATE ---
+    min_adr_pct: float = 3.0                  # 변동성이 없으면 목표 수익도 없다
     min_dollar_volume: float = 3_000_000.0
-    min_prior_move_pct: float = 30.0
+    min_prior_move_pct: float = 30.0          # 컨솔 직전 상승폭
+    min_rs_percentile: float = 80.0           # 미너비니(70)보다 높다 — 주도주만 본다
+
+    # --- 컨솔리데이션 탐지 ---
     consolidation_min_days: int = 10
+    consolidation_max_days: int = 65
+    prior_move_lookback_days: int = 130       # 컨솔 시작 이전 상승을 재는 창
+    swing_fractal_k: int = 3
+
+    # --- SCORE: 타이밍 채점 (게이트 통과 종목만) ---
+    ideal_consolidation_depth_pct: float = 12.0  # 얕게 조일수록 좋다
+    max_consolidation_depth_pct: float = 35.0    # 이보다 깊으면 0점
+    ideal_ma_distance_pct: float = 3.0           # 10일선에 붙어 있을수록 좋다
+    max_ma_distance_pct: float = 15.0
+    ideal_prior_move_pct: float = 100.0
+    ideal_volume_dryup_ratio: float = 0.7
+    pivot_proximity_pct: float = 3.0
+    extended_pct_above_pivot: float = 5.0
+    buy_min_score_pct: float = 60.0
+
+    # 배점 (합계 100)
+    weight_tightness: float = 25.0
+    weight_ma_proximity: float = 25.0
+    weight_pivot_proximity: float = 20.0
+    weight_prior_move: float = 15.0
+    weight_volume_dryup: float = 15.0
 
 
 @dataclass(frozen=True)

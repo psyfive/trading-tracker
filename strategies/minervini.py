@@ -44,6 +44,7 @@ from core.types import (
     SetupState,
     Verdict,
 )
+from indicators.core import swing_positions
 from strategies.base import StrategyBase, build_gate_check, build_gate_result
 
 
@@ -78,22 +79,13 @@ class BaseStructure:
 def _swing_points(highs: pd.Series, lows: pd.Series, k: int) -> tuple[list[int], list[int]]:
     """프랙탈 스윙 고점/저점의 위치 목록.
 
-    i번 봉이 i-k..i+k 구간의 최고가면 스윙 고점이다. i+k가 마지막 봉을 넘지 않으므로
-    미래 참조가 아니다 — 판정 시점 t까지의 데이터 안에서만 본다.
+    정의는 `indicators/core.py`에 있다 — 계산식이 하나뿐이고 전략 3종이 각자 다른 k로
+    같은 정의를 쓰므로 지표다. 여기서는 위치 목록 형태로만 받아 온다.
     """
-    high_values, low_values = highs.to_numpy(), lows.to_numpy()
-    n = len(high_values)
-    swing_highs: list[int] = []
-    swing_lows: list[int] = []
-
-    for i in range(k, n - k):
-        window_high = high_values[i - k : i + k + 1]
-        window_low = low_values[i - k : i + k + 1]
-        if high_values[i] >= window_high.max():
-            swing_highs.append(i)
-        if low_values[i] <= window_low.min():
-            swing_lows.append(i)
-    return swing_highs, swing_lows
+    return (
+        swing_positions(highs, k, is_high=True),
+        swing_positions(lows, k, is_high=False),
+    )
 
 
 def _contractions(

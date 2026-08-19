@@ -30,6 +30,9 @@ from indicators.core import (
     rsi,
     slope_pct,
     sma,
+    swing_high_flags,
+    swing_low_flags,
+    swing_positions,
     true_range,
     volume_sma,
     wilder_smooth,
@@ -451,6 +454,8 @@ def test_short_input_macd_and_bollinger_return_all_nan():
         ("slope_pct", lambda s: slope_pct(s, 3)),
         ("rolling_high", lambda s: rolling_high(s, 3)),
         ("rolling_low", lambda s: rolling_low(s, 3)),
+        ("swing_high_flags", lambda s: swing_high_flags(s, 2)),
+        ("swing_low_flags", lambda s: swing_low_flags(s, 2)),
     ],
 )
 def test_output_length_and_index_match_input(name, call):
@@ -473,9 +478,76 @@ def test_output_length_and_index_match_input(name, call):
         lambda: adr_pct(series(SHORT), series(SHORT), 0),
         lambda: slope_pct(series(SHORT), 0),
         lambda: rolling_high(series(SHORT), 0),
+        lambda: swing_high_flags(series(SHORT), 0),
+        lambda: swing_low_flags(series(SHORT), -1),
     ],
 )
 def test_non_positive_period_is_a_programming_error(call):
     """period <= 0 은 데이터 문제가 아니라 호출 버그다. NaN으로 삼키지 않는다."""
     with pytest.raises(ValueError, match="period"):
         call()
+
+
+# ===========================================================================
+# 프랙탈 스윙 고저 — 손계산
+# ===========================================================================
+
+# 시리즈: 1, 3, 5, 4, 2, 6, 8, 7, 9, 3   (위치 0~9)
+# k=2 이므로 위치 2~7만 판정 대상이다 (앞뒤 2봉이 없는 0,1,8,9는 False).
+#   위치 2 (5): 창 [1,3,5,4,2] 최고 5 -> True
+#   위치 3 (4): 창 [3,5,4,2,6] 최고 6 -> False
+#   위치 4 (2): 창 [5,4,2,6,8] 최고 8 -> False
+#   위치 5 (6): 창 [4,2,6,8,7] 최고 8 -> False
+#   위치 6 (8): 창 [2,6,8,7,9] 최고 9 -> False
+#   위치 7 (7): 창 [6,8,7,9,3] 최고 9 -> False
+SWING_SOURCE = [1.0, 3.0, 5.0, 4.0, 2.0, 6.0, 8.0, 7.0, 9.0, 3.0]
+EXPECTED_SWING_HIGHS = [2]
+# 저점: 위치 2~7
+#   위치 2 (5): 창 최저 1 -> False
+#   위치 3 (4): 창 최저 2 -> False
+#   위치 4 (2): 창 [5,4,2,6,8] 최저 2 -> True
+#   위치 5 (6): 창 최저 2 -> False
+#   위치 6 (8): 창 최저 2 -> False
+#   위치 7 (7): 창 [6,8,7,9,3] 최저 3 -> False
+EXPECTED_SWING_LOWS = [4]
+
+
+def test_swing_high_flags_match_hand_calculation():
+    flags = swing_high_flags(series(SWING_SOURCE), 2)
+    assert [int(i) for i in np.flatnonzero(flags.to_numpy())] == EXPECTED_SWING_HIGHS
+
+
+def test_swing_low_flags_match_hand_calculation():
+    flags = swing_low_flags(series(SWING_SOURCE), 2)
+    assert [int(i) for i in np.flatnonzero(flags.to_numpy())] == EXPECTED_SWING_LOWS
+
+
+def test_swing_positions_wraps_both_directions():
+    source = series(SWING_SOURCE)
+    assert swing_positions(source, 2, is_high=True) == EXPECTED_SWING_HIGHS
+    assert swing_positions(source, 2, is_high=False) == EXPECTED_SWING_LOWS
+
+
+def test_edges_are_never_swing_points():
+    """앞뒤 k봉은 판정 근거가 없다. 추측해서 True로 만들지 않는다."""
+    flags = swing_high_flags(series(SWING_SOURCE), 2)
+    assert not flags.iloc[:2].any()
+    assert not flags.iloc[-2:].any()
+
+
+def test_the_last_bar_can_never_be_a_swing_high():
+    """이 성질이 돌파 탐지를 가능하게 한다.
+
+    오늘 봉의 고가가 스윙 고점이 되면 '오늘 고가를 오늘 종가가 넘어야 하는' 모순이
+    생겨 BREAKOUT 판정이 영원히 나오지 않는다 (미너비니 피벗 회귀 참조).
+    """
+    rising = series([float(i) for i in range(1, 21)])  # 마지막 봉이 항상 최고가
+    for k in (1, 2, 3, 5):
+        assert not bool(swing_high_flags(rising, k).iloc[-1])
+
+
+def test_ties_count_as_swing_points():
+    """같은 값이 이어지면 극값 판정은 >= 기준이다 (평평한 고점도 고점이다)."""
+    flat = series([1.0, 2.0, 3.0, 3.0, 3.0, 2.0, 1.0])
+    flags = swing_high_flags(flat, 1)
+    assert [int(i) for i in np.flatnonzero(flags.to_numpy())] == [2, 3, 4]

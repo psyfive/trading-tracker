@@ -31,6 +31,7 @@ from core.types import (
     IndicatorSnapshot,
     MarketRegime,
     MinerviniSetup,
+    QullamaggieSetup,
     RiskPlan,
     RLevel,
     ScoreComponent,
@@ -41,6 +42,7 @@ from core.types import (
     StrategyVerdict,
     Verdict,
     WarningCode,
+    WeinsteinSetup,
 )
 
 # ---------------------------------------------------------------------------
@@ -748,3 +750,51 @@ def test_json_schema_generates():
     schema = DiagnosisReport.model_json_schema()
     assert schema["title"] == "DiagnosisReport"
     assert "strategy_verdicts" in schema["properties"]
+
+
+# ---------------------------------------------------------------------------
+# SetupDetail 판별 유니온 (Phase 4에서 3종으로 늘었다)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("model", "kind"),
+    [
+        (MinerviniSetup, "minervini"),
+        (WeinsteinSetup, "weinstein"),
+        (QullamaggieSetup, "qullamaggie"),
+    ],
+)
+def test_setup_detail_variants_round_trip_by_kind(model, kind):
+    """kind로 분기하는 판별 유니온이므로, 직렬화 후 다시 읽으면 같은 타입이어야 한다."""
+    metrics = SetupMetrics(pivot_price=100.0, detail=model())
+    payload = json.loads(metrics.model_dump_json())
+
+    assert payload["detail"]["kind"] == kind
+    assert type(SetupMetrics.model_validate(payload).detail) is model
+
+
+def test_unknown_setup_detail_kind_is_rejected():
+    """모르는 kind를 조용히 통과시키면 프론트가 빈 detail을 그리게 된다."""
+    with pytest.raises(ValidationError):
+        SetupMetrics.model_validate({"detail": {"kind": "canslim"}})
+
+
+@pytest.mark.parametrize(
+    ("model", "field_name"),
+    [
+        (WeinsteinSetup, "stage2_age_days"),
+        (WeinsteinSetup, "distance_from_ma30w_pct"),
+        (QullamaggieSetup, "prior_move_pct"),
+        (QullamaggieSetup, "ma_distance_pct"),
+    ],
+)
+def test_strategy_vocabulary_stays_out_of_the_shared_core(model, field_name):
+    """전략 고유 어휘는 SetupMetrics 공통 코어나 IndicatorSnapshot에 올라가면 안 된다.
+
+    올리는 순간 다른 전략들이 채울 수 없는 필드를 이고 다니게 되고,
+    '와인스타인의 Stage 나이'가 마치 모든 방법론의 공통 개념인 것처럼 보인다.
+    """
+    assert field_name in model.model_fields
+    assert field_name not in SetupMetrics.model_fields
+    assert field_name not in IndicatorSnapshot.model_fields

@@ -5,9 +5,9 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 3.5 완료)
+## 현재 상태 (Phase 4 완료)
 
-계약(v1.1.0) + 데이터 + 지표 + 하네스 + **미너비니 전략** + **유니버스 RS**까지 구현됐다.
+계약(v1.2.0) + 데이터 + 지표 + 하네스 + **전략 3종** + 유니버스 RS까지 구현됐다.
 
 - **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
@@ -17,9 +17,41 @@
 - **Phase 3 (전략)**: `strategies/minervini.py`, `regime/market.py`
 - **Phase 3.5 (유니버스)**: `data/universes/*.txt` 목록, 교차단면 RS 백분위,
   다종목 패널 집계(`evaluate_panel`), 지표 사전 계산
-- **미구현**: 나머지 전략 3종(와인스타인/CANSLIM/Qullamaggie), `risk/planner.py`,
-  `render/`, `main.py`의 진단 파이프라인
+- **Phase 4 (전략 2종 추가)**: `strategies/weinstein.py`, `strategies/qullamaggie.py`,
+  스키마 1.2.0(`WeinsteinSetup` / `QullamaggieSetup`), 프랙탈 스윙 지표 공유
+- **미구현**: CANSLIM(재무 데이터 필요), `risk/planner.py`, `render/`,
+  `main.py`의 진단 파이프라인
 - `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+
+### 전략마다 게이트의 축이 다르다
+
+세 전략의 게이트는 조건 수도 내용도 다르다. **같은 질문을 세 번 하는 게이트가 아니라
+서로 다른 질문을 하는 게이트**여야 판정이 갈리고, 판정이 갈려야 나란히 둘 이유가 있다.
+
+| 전략 | 게이트가 묻는 것 | 조건 수 |
+|---|---|---|
+| minervini | 이동평균 8개 조건이 정렬됐는가 | 8 |
+| weinstein | Stage 2인가 + 10주선/국면/RS/유동성 | 5 |
+| qullamaggie | 직전 급등이 있었는가 + ADR/거래대금/RS/20일선 | 5 |
+
+`us_large` 패널 실측 진입률은 minervini 0.5% / weinstein 8.7% / qullamaggie 0.3%다.
+게이트가 자주 열리는 전략은 무조건부 매수에 수렴하며, 그때 초과수익이 0 근처로
+나오는 것은 결함이 아니라 정합성 신호다 (와인스타인 20봉 초과수익 -0.28%p).
+
+**함의 관계인 조건을 중복해서 세지 말 것.** 와인스타인 게이트에 '30주선 위'와
+'30주선 상승'을 다시 넣으면 Stage 2가 이미 함의하는 사실을 세 번 세게 되어
+`pass_count/total` 진행률이 부풀고 워치리스트 근접도 정렬이 낙관 쪽으로 틀어진다.
+`tests/test_strategies_weinstein.py`가 이 설계를 잠근다.
+
+### 프랙탈 스윙은 지표다 (전략 3종이 공유한다)
+
+`swing_high_flags` / `swing_low_flags` / `swing_positions`가 `indicators/core.py`에 있다.
+"i봉이 i±k 구간의 극값인가"는 k만 정해지면 계산식이 하나뿐이므로 지표의 자격을 갖는다.
+전략은 각자 자기 config의 k로 호출한다.
+
+마지막 봉은 **절대 스윙 고점이 될 수 없다**(양옆 k봉이 필요하므로). 이 성질이
+돌파 탐지를 가능하게 한다 — 오늘 고가가 피벗이 되면 '오늘 종가가 오늘 고가를 넘어야'
+하므로 BREAKOUT이 영원히 나오지 않는다. Phase 3에서 실제로 밟았던 함정이다.
 
 ### 표본은 종목을 늘려서만 모인다
 
@@ -41,7 +73,10 @@ US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
 
 ### 전략을 추가할 때 반드시 볼 것
 
-`strategies/minervini.py`가 참조 구현이다. 새 전략은 이 구조를 따른다:
+`strategies/minervini.py`가 참조 구현이다 (게이트 조건이 가장 많고 VCP 어휘가 전부 있다).
+`weinstein.py`는 **주입 컨텍스트(Stage·regime)를 게이트에 쓰는 예**,
+`qullamaggie.py`는 **추세가 아닌 것(급등 이력·변동성·유동성)을 게이트에 두는 예**다.
+새 전략은 이 구조를 따른다:
 
 - `build_gate_check()`로만 GateCheck를 만든다 — `shortfall_pct`(미달 폭) 계산이
   여기 한 곳에 있다. 전략마다 계산하면 프론트가 자기 방식으로 다시 계산하게 된다.
@@ -51,6 +86,10 @@ US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
   `SetupDetail` 유니온에 덧붙인다 — 이는 additive 변경이다.
 - 게이트 체크의 `actual`은 **측정값**이고 `threshold`가 기준값이다. 둘에 같은 값을
   넣으면 게이트 판정은 맞아 보이지만 미달 폭이 항상 0이 되어 근접도 정렬이 죽는다.
+- 서로 **함의 관계인 조건을 중복해서 넣지 않는다** (위 '전략마다 게이트의 축이 다르다').
+  BOOL 조건은 `actual`/`threshold`를 비우고 `Comparator.BOOL`을 쓴다.
+- 새 전략의 시점 정합성은 `tests/test_strategies_lookahead.py`에 한 줄 추가해 잠근다.
+  전략별 단위 테스트의 결정론 검사만으로는 시점이 달라졌을 때의 흔들림을 못 잡는다.
 
 ### 전략을 만들기 전에 자를 먼저 만들었다
 
@@ -229,7 +268,7 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `data/fetcher.py` | yfinance 3년치 OHLCV + parquet 캐시 |
 | `data/universe.py` | 유니버스 교차단면 RS 백분위 |
 | `data/universes/*.txt` | 유니버스 구성 종목 목록. 생존편향 경고 포함 |
-| `indicators/core.py` | SMA/EMA/RSI/MACD/BB/ATR 직접 구현 |
+| `indicators/core.py` | SMA/EMA/RSI/MACD/BB/ATR + 프랙탈 스윙 고저 직접 구현 |
 | `strategies/base.py` | `Strategy` Protocol + `StrategyBase` 템플릿 |
 | `strategies/*.py` | 전략별 GATE/SCORE 구현 |
 | `regime/market.py` | 시장 국면 판정 |
@@ -281,6 +320,10 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 
 ```bash
 python -m pytest tests/ -q
+```
+
+```bash
+python scripts/verify_phase4.py
 ```
 
 ```bash

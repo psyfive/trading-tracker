@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 # progress_ratio 대조 허용 오차 (DiagnosisReport validator에서 사용).
 # 목업/조립 코드가 소수 4자리로 반올림해도 통과하되 (2/3 -> 0.6667, 오차 3.3e-5),
@@ -333,13 +333,64 @@ class MinerviniSetup(Contract):
     )
 
 
+class WeinsteinSetup(Contract):
+    """와인스타인 Stage Analysis 전용 수치. SetupMetrics.detail에 실린다.
+
+    여기 있는 값은 **Stage 어휘**다. 30주선과의 관계, Stage 2에 머문 기간처럼
+    이 방법론에서만 의미를 갖는 것들이며 다른 전략은 채우지 않는다.
+
+    피벗은 SetupMetrics 공통 코어에 있고 그 정의는 '직전 거래범위(Stage 1) 상단'이다 —
+    미너비니의 '마지막 수축 고점'과 다른 값이며, 그래서 판정 주체 옆에 보존된다.
+    """
+
+    kind: Literal["weinstein"] = "weinstein"
+    ma30w: float | None = Field(
+        default=None, description="30주선. 일봉 150선으로 근사한다"
+    )
+    distance_from_ma30w_pct: Pct | None = Field(
+        default=None, description="(주가 - 30주선) / 30주선 * 100. 음수 = 이동평균 아래"
+    )
+    stage2_age_days: int | None = Field(
+        default=None,
+        description="30주선 위 + 30주선 상승 상태가 이어진 일수. 와인스타인은 초기를 산다",
+    )
+    breakout_volume_ratio: Ratio | None = Field(
+        default=None, description="최근 거래량 / 50일 평균. 돌파 확인용"
+    )
+
+
+class QullamaggieSetup(Contract):
+    """Qullamaggie 브레이크아웃 전용 수치. SetupMetrics.detail에 실린다.
+
+    핵심 어휘는 **직전 급등(prior move)**이다. 이 방법론은 이미 크게 오른 종목이
+    쉬는 자리를 사므로, 급등 폭이 셋업의 전제 조건이자 품질 지표가 된다.
+
+    공통 코어의 base_length_days / base_depth_pct는 여기서 '컨솔리데이션 길이/깊이'다.
+    피벗은 '컨솔리데이션 상단'이며 미너비니의 피벗과 값이 다르다.
+    """
+
+    kind: Literal["qullamaggie"] = "qullamaggie"
+    prior_move_pct: Pct | None = Field(
+        default=None, description="컨솔리데이션 직전 저점에서 컨솔 고점까지의 상승률"
+    )
+    ma_distance_pct: Pct | None = Field(
+        default=None, description="(주가 - 10일선) / 10일선 * 100. 붙어 있을수록 이상적"
+    )
+    volume_dryup_ratio: Ratio | None = Field(
+        default=None, description="컨솔 후반 평균거래량 / 컨솔 평균거래량"
+    )
+
+
 # 전략별 셋업 상세의 판별 유니온. `kind`로 분기한다.
 #
 # 새 전략을 추가할 때 이 유니온에 변형을 **덧붙이는 것은 additive 변경**이다
 # (기존 소비자는 모르는 kind를 만나면 detail을 무시하면 된다).
 # 아직 구현하지 않은 전략의 필드를 미리 넣지 않는다 — 구현 전에 지은 필드명은
 # 추측이고, 이 프로젝트는 미확정 필드를 계약에 넣지 않는다.
-SetupDetail = Annotated[MinerviniSetup, Field(discriminator="kind")]
+# (그래서 CANSLIM 변형은 여기 없다. 그 전략을 구현하는 Phase에서 덧붙인다.)
+SetupDetail = Annotated[
+    MinerviniSetup | WeinsteinSetup | QullamaggieSetup, Field(discriminator="kind")
+]
 
 
 class SetupMetrics(Contract):

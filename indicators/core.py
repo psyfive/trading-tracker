@@ -196,3 +196,37 @@ def rolling_low(series: pd.Series, period: int) -> pd.Series:
     """기간 내 최저값."""
     _check_period(period)
     return series.rolling(window=period, min_periods=period).min()
+
+
+def swing_high_flags(high: pd.Series, k: int) -> pd.Series:
+    """프랙탈 스윙 고점 여부 (입력과 같은 길이의 bool Series).
+
+    i봉의 고가가 i-k..i+k 구간의 최고가면 True다. 양옆으로 k봉이 확보되지 않는
+    앞뒤 k개 구간은 판정 근거가 없으므로 False다.
+
+    **미래 참조가 아니다.** i봉의 판정에 i+k봉이 들어가지만, 호출부가 넘기는 Series는
+    이미 판정 시점까지 잘려 있으므로 True가 될 수 있는 위치는 i+k <= 마지막 봉인
+    곳뿐이다. 즉 스윙 고점은 최소 k봉이 지나야 확정되며, 그래서 돌파 트리거로 쓸 수 있다
+    (오늘 봉의 고가는 스윙 고점이 될 수 없으므로 '오늘 고가를 오늘 넘어야 하는' 모순이
+    생기지 않는다).
+
+    전략 3종이 각자 다른 k로 이 정의를 공유한다. 계산식이 하나뿐이므로 지표다.
+    """
+    _check_period(k)
+    window = 2 * k + 1
+    centered = high.rolling(window=window, center=True, min_periods=window).max()
+    return high >= centered
+
+
+def swing_low_flags(low: pd.Series, k: int) -> pd.Series:
+    """프랙탈 스윙 저점 여부. swing_high_flags의 대칭."""
+    _check_period(k)
+    window = 2 * k + 1
+    centered = low.rolling(window=window, center=True, min_periods=window).min()
+    return low <= centered
+
+
+def swing_positions(series: pd.Series, k: int, *, is_high: bool) -> list[int]:
+    """스윙 극점의 **위치 목록**(0-based). 베이스/컨솔 구조 탐지의 공통 입력이다."""
+    flags = swing_high_flags(series, k) if is_high else swing_low_flags(series, k)
+    return [int(i) for i in np.flatnonzero(flags.to_numpy())]

@@ -268,8 +268,14 @@ def test_setup_detail_is_tagged_by_strategy():
     assert detail.contraction_count == 3
 
 
-def test_non_minervini_strategies_have_no_setup_detail():
-    """와인스타인은 VCP 어휘를 갖지 않는다. 공통 코어만 채운다."""
+def test_setup_detail_is_optional():
+    """detail은 없어도 된다. 프론트는 null을 반드시 처리해야 한다.
+
+    목업의 와인스타인 판정은 detail 없이 공통 코어(피벗/베이스)만 채운 예다 —
+    전략이 자기 어휘를 아직 정하지 않았거나 채울 값이 없을 때의 모습이다.
+    (구현된 `strategies/weinstein.py`는 WeinsteinSetup을 채운다. 이 목업은 계약의
+    허용 범위를 보여주는 손으로 채운 예시이지 구현의 스냅샷이 아니다.)
+    """
     weinstein = verdict_of(load("sample_buy.json"), "weinstein").setup_metrics
     assert weinstein.detail is None
     assert weinstein.pivot_price is not None, "공통 코어(피벗)는 채울 수 있어야 한다"
