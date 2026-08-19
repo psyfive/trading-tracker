@@ -50,8 +50,8 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pandas as pd
@@ -59,6 +59,7 @@ import pandas as pd
 from config import AppConfig, BacktestConfig
 from core.context import StockContext, build_context
 from core.types import BarMeta, MarketRegime, SessionState, Stage, Verdict
+from indicators.snapshot import IndicatorFrame, build_indicator_frame
 from strategies.base import Strategy
 
 # 시점별 컨텍스트 주입용 매핑. 호출부가 point-in-time으로 계산해 넘긴다 (모듈 docstring 참조).
@@ -257,11 +258,17 @@ def _evaluate_at(
     stage_by_date: StageByDate | None = None,
     rs_percentile_by_date: RsByDate | None = None,
     visible_history: pd.DataFrame | None = None,
+    indicator_frame: IndicatorFrame | None = None,
 ):
     """시점 position에서 전략을 평가한다.
 
     visible_history: 뒷문(requires_full_history)으로 주입할 데이터.
     감사에서 '얼마나 보여줄지'를 바꿔가며 부르기 위해 인자로 뺐다.
+
+    indicator_frame: df 전체에 대해 미리 계산해 둔 지표 시계열. 시점마다 윈도우
+    전체를 재계산하지 않기 위한 것이다 (O(n^2) -> O(n)). 지표가 후방 참조만 한다는
+    성질에 의존하며, 그 성질은 감사가 교차 확인한다 — 감사의 두 패스는 길이가 다른
+    df로 각각 프레임을 만들므로, 지표가 미래를 보면 판정이 갈려 적발된다.
 
     *_by_date: 시점별 컨텍스트 주입 (모듈 docstring 참조). 해당 날짜가 매핑에 없으면
     regime은 상수 인자로, stage는 UNDEFINED로, rs_percentile은 None으로 떨어진다 —
@@ -287,6 +294,8 @@ def _evaluate_at(
         rs_percentile=(
             rs_percentile_by_date.get(as_of) if rs_percentile_by_date is not None else None
         ),
+        indicator_frame=indicator_frame,
+        position=position if indicator_frame is not None else -1,
     )
     _assert_point_in_time(ctx, df.index[position], position)
     return strategy.evaluate(ctx)
@@ -334,16 +343,19 @@ def audit_lookahead(
         "stage_by_date": stage_by_date,
         "rs_percentile_by_date": rs_percentile_by_date,
     }
+    full_frame = build_indicator_frame(df, config.indicators)
     violations: list[str] = []
     for position in positions:
         truncated = df.iloc[: position + 1]
         with_future = _evaluate_at(
             strategy, ticker, df, position, config, regime=regime,
-            visible_history=df, **injected,
+            visible_history=df, indicator_frame=full_frame, **injected,
         )
         without_future = _evaluate_at(
             strategy, ticker, truncated, position, config, regime=regime,
-            visible_history=truncated, **injected,
+            visible_history=truncated,
+            indicator_frame=build_indicator_frame(truncated, config.indicators),
+            **injected,
         )
 
         if with_future != without_future:
@@ -386,6 +398,55 @@ def forward_outcome(
         return_pct=(exit_price - entry) / entry * 100.0,
         max_adverse_pct=(trough - entry) / entry * 100.0,
     )
+
+
+@dataclass(frozen=True)
+class OutcomeGroups:
+    """한 종목·한 보유기간의 집단별 성과 목록.
+
+    다종목 집계는 요약(GroupStats)을 평균내는 것이 아니라 **원본 Outcome을 합쳐**
+    다시 요약한다. 요약의 평균은 종목별 표본 수를 무시해 작은 표본에 과한 가중치를 준다.
+    """
+
+    entered: list[Outcome]
+    not_entered: list[Outcome]
+    rejected: list[Outcome]
+    benchmark: list[Outcome]
+
+    def merged_with(self, other: OutcomeGroups) -> OutcomeGroups:
+        return OutcomeGroups(
+            entered=self.entered + other.entered,
+            not_entered=self.not_entered + other.not_entered,
+            rejected=self.rejected + other.rejected,
+            benchmark=self.benchmark + other.benchmark,
+        )
+
+
+def collect_outcomes(
+    signals: list[Signal], df: pd.DataFrame, horizon: int, backtest: BacktestConfig
+) -> OutcomeGroups:
+    """시그널 목록을 진입/통과-미진입/탈락/벤치마크 4집단의 성과로 변환한다."""
+    positions = {df.index[i].date(): i for i in range(len(df))}
+    offset = backtest.entry_offset_bars
+    groups = OutcomeGroups([], [], [], [])
+
+    for signal in signals:
+        outcome = forward_outcome(
+            df, positions[signal.as_of] + offset, horizon,
+            score=signal.score, as_of=signal.as_of,
+        )
+        if outcome is None:
+            continue
+        groups.benchmark.append(
+            Outcome(signal.as_of, None, outcome.return_pct, outcome.max_adverse_pct)
+        )
+        if not signal.gate_passed:
+            groups.rejected.append(outcome)
+        elif signal.entered:
+            groups.entered.append(outcome)
+        else:
+            groups.not_entered.append(outcome)
+    return groups
 
 
 def summarize(label: str, outcomes: list[Outcome], config: BacktestConfig) -> GroupStats:
@@ -453,12 +514,14 @@ def replay(
     backtest = config.backtest
     offset = backtest.entry_offset_bars
     signals: list[Signal] = []
+    frame = build_indicator_frame(df, config.indicators)
 
     for position in _evaluation_range(df, backtest):
         verdict = _evaluate_at(
             strategy, ticker, df, position, config, regime=regime,
             regime_by_date=regime_by_date, stage_by_date=stage_by_date,
             rs_percentile_by_date=rs_percentile_by_date,
+            indicator_frame=frame,
         )
         entry_position = position + offset
         entered = verdict.verdict is Verdict.BUY
@@ -496,7 +559,6 @@ def evaluate_results(
     지수(SPY/KOSPI) 대비 비교는 유니버스 데이터가 필요하므로 Phase 3.5다.
     """
     backtest = config.backtest
-    offset = backtest.entry_offset_bars
     injected = {
         "regime_by_date": regime_by_date,
         "stage_by_date": stage_by_date,
@@ -515,31 +577,12 @@ def evaluate_results(
             + "\n  - ".join(audit.violations[:5])
         )
 
-    positions = {df.index[i].date(): i for i in range(len(df))}
     results: list[BacktestResult] = []
 
     for horizon in backtest.horizons:
-        entered: list[Outcome] = []
-        not_entered: list[Outcome] = []
-        rejected: list[Outcome] = []
-        benchmark: list[Outcome] = []
-
-        for signal in signals:
-            entry_position = positions[signal.as_of] + offset
-            outcome = forward_outcome(
-                df, entry_position, horizon, score=signal.score, as_of=signal.as_of
-            )
-            if outcome is None:
-                continue
-            benchmark.append(
-                Outcome(signal.as_of, None, outcome.return_pct, outcome.max_adverse_pct)
-            )
-            if not signal.gate_passed:
-                rejected.append(outcome)
-            elif signal.entered:
-                entered.append(outcome)
-            else:
-                not_entered.append(outcome)
+        groups = collect_outcomes(signals, df, horizon, backtest)
+        entered, not_entered = groups.entered, groups.not_entered
+        rejected, benchmark = groups.rejected, groups.benchmark
 
         results.append(
             BacktestResult(
@@ -561,3 +604,114 @@ def evaluate_results(
 def sweep(*args, **kwargs):
     """dataclasses.replace()로 설정 변형본을 만들어 파라미터 스윕. Phase 3 이후."""
     raise NotImplementedError("파라미터 스윕은 진짜 전략이 생긴 뒤에 의미가 있다 (Phase 3+)")
+
+
+# ---------------------------------------------------------------------------
+# 다종목 패널 집계
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PanelResult:
+    """여러 종목을 합친 성과. 전략 하나 x 보유기간 하나.
+
+    종목별 결과를 평균내지 않고 **원본 시그널을 전부 합쳐** 다시 요약한다.
+    종목당 진입이 5건인 전략을 30종목에 돌리면 풀링 표본은 150건이 되고,
+    그제서야 min_sample_size 기준을 넘긴다 — 이것이 유니버스를 갖춘 이유다.
+
+    전략끼리 합산하지 않는 원칙은 그대로다. 여기서 합치는 것은 같은 전략의 종목별 결과다.
+    """
+
+    strategy_name: str
+    horizon: int
+    tickers: int
+    tickers_with_entries: int
+    signals: GroupStats
+    gate_passed_not_entered: GroupStats
+    gate_rejected: GroupStats
+    benchmark: GroupStats
+    by_score_bucket: tuple[GroupStats, ...]
+    audits: tuple[LookaheadAudit, ...]
+    entries_by_ticker: tuple[tuple[str, int], ...]
+
+    @property
+    def excess_return_pct(self) -> float | None:
+        if self.signals.mean_return_pct is None or self.benchmark.mean_return_pct is None:
+            return None
+        return self.signals.mean_return_pct - self.benchmark.mean_return_pct
+
+    @property
+    def audit_clean(self) -> bool:
+        """감사한 종목이 하나라도 있고, 전부 위반이 없어야 깨끗하다."""
+        return bool(self.audits) and all(a.clean for a in self.audits)
+
+
+def evaluate_panel(
+    make_strategy: Callable[[], Strategy],
+    frames: Mapping[str, pd.DataFrame],
+    config: AppConfig,
+    *,
+    injections: Mapping[str, Mapping[str, object]] | None = None,
+    warmups: Mapping[str, int] | None = None,
+    audit_tickers: int = 5,
+) -> list[PanelResult]:
+    """여러 종목에 같은 전략을 돌리고 결과를 풀링한다.
+
+    make_strategy는 **종목마다 새 인스턴스**를 만든다. 전략이 상태를 들고 있으면
+    (예: PerfectHindsight의 주입된 히스토리) 종목 간에 새는 것을 막기 위함이다.
+
+    audit_tickers: look-ahead 감사를 돌릴 종목 수. 감사는 시점당 2회 평가라 비싸고,
+    전략의 결정론이 종목에 의존하지 않으므로 표본으로 충분하다. 다만 '표본'이라는
+    사실이 결과에 남아야 하므로 audits 목록을 그대로 들고 다닌다.
+    """
+    backtest = config.backtest
+    injections = injections or {}
+    warmups = warmups or {}
+
+    pooled: dict[int, OutcomeGroups] = {
+        horizon: OutcomeGroups([], [], [], []) for horizon in backtest.horizons
+    }
+    audits: list[LookaheadAudit] = []
+    entries: dict[str, int] = {}
+    strategy_name = make_strategy().name
+
+    for index, (ticker, df) in enumerate(sorted(frames.items())):
+        run_config = config
+        if ticker in warmups:
+            run_config = replace(
+                config, backtest=replace(backtest, warmup_bars=warmups[ticker])
+            )
+        inject = dict(injections.get(ticker, {}))
+
+        try:
+            signals = replay(make_strategy(), ticker, df, run_config, **inject)
+        except InsufficientBacktestDataError:
+            continue
+
+        entries[ticker] = sum(1 for s in signals if s.entered)
+        for horizon in backtest.horizons:
+            pooled[horizon] = pooled[horizon].merged_with(
+                collect_outcomes(signals, df, horizon, run_config.backtest)
+            )
+
+        if index < audit_tickers:
+            audits.append(
+                audit_lookahead(make_strategy(), ticker, df, run_config, **inject)
+            )
+
+    return [
+        PanelResult(
+            strategy_name=strategy_name,
+            horizon=horizon,
+            tickers=len(entries),
+            tickers_with_entries=sum(1 for n in entries.values() if n > 0),
+            signals=summarize("진입(BUY)", groups.entered, backtest),
+            gate_passed_not_entered=summarize("통과-미진입", groups.not_entered, backtest),
+            gate_rejected=summarize("게이트 탈락", groups.rejected, backtest),
+            benchmark=summarize("무조건부 매수(벤치마크)", groups.benchmark, backtest),
+            by_score_bucket=bucket_outcomes(groups.entered, backtest),
+            audits=tuple(audits),
+            entries_by_ticker=tuple(sorted(entries.items())),
+        )
+        for horizon, groups in pooled.items()
+    ]

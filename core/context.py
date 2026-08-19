@@ -18,7 +18,7 @@ import pandas as pd
 
 from config import AppConfig
 from core.types import BarMeta, DiagnosticWarning, IndicatorSnapshot, MarketRegime, Stage
-from indicators.snapshot import build_indicator_snapshot
+from indicators.snapshot import IndicatorFrame, snapshot_at
 
 
 @dataclass(frozen=True)
@@ -76,20 +76,31 @@ def build_context(
     rs_percentile: float | None = None,
     rs_line_new_high: bool | None = None,
     warnings: tuple[DiagnosticWarning, ...] = (),
+    indicator_frame: IndicatorFrame | None = None,
+    position: int = -1,
 ) -> StockContext:
-    """OHLCV로부터 지표를 전부 계산해 StockContext를 만든다.
+    """OHLCV로부터 지표를 계산해 StockContext를 만든다.
 
     여기가 지표 계산의 유일한 진입점이다. 전략은 이 함수를 호출하지 않는다.
 
-    rs_percentile은 유니버스가 필요하므로 호출부가 주입한다 (Phase 3.5 전까지는 None).
-    stage 판정은 regime/market.py의 몫이며 아직 미구현이라 기본값이 UNDEFINED다.
+    rs_percentile은 유니버스가 필요하므로 호출부가 주입한다.
+    stage 판정은 regime/market.py의 몫이다.
+
+    indicator_frame: 사전 계산된 지표 시계열. 백테스트가 같은 시계열을 시점마다
+    다시 계산하지 않도록 넘긴다. 이때 ohlcv는 시점까지 잘린 창이고 position은
+    **프레임 기준** 인덱스다. 넘기지 않으면 ohlcv로 그 자리에서 계산한다.
     """
+    if indicator_frame is None:
+        from indicators.snapshot import build_indicator_frame
+
+        indicator_frame, position = build_indicator_frame(ohlcv, config.indicators), -1
+
     return StockContext(
         ticker=ticker.upper(),
         ohlcv=ohlcv,
-        indicators=build_indicator_snapshot(
-            ohlcv,
-            config.indicators,
+        indicators=snapshot_at(
+            indicator_frame,
+            position,
             rs_percentile=rs_percentile,
             rs_line_new_high=rs_line_new_high,
         ),

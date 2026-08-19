@@ -33,8 +33,11 @@ from config import DEFAULT_CONFIG  # noqa: E402
 from core.context import build_context  # noqa: E402
 from core.types import BarMeta, SessionState  # noqa: E402
 from data.universe import (  # noqa: E402
-    approximate_rs_percentile_series,
-    rs_universe_warning,
+    rs_percentile_frame,
+    rs_percentile_series,
+    rs_score_frame,
+    survivorship_warning,
+    universe_for,
 )
 from regime.market import regime_series, stage_series  # noqa: E402
 from strategies.dummy import (  # noqa: E402
@@ -47,8 +50,8 @@ from strategies.minervini import MinerviniStrategy  # noqa: E402
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 console = Console()
 
-# 종목 -> 벤치마크 지수. 시장이 다르면 거래일이 달라 RS 계산에서 교집합만 쓴다.
-PAIRS = {"AAPL": "SPY", "005930.KS": "^KS11"}
+# 종목 -> (벤치마크 지수, 거래소). 유니버스와 벤치마크는 시장별로 다르다.
+PAIRS = {"AAPL": ("SPY", "US"), "005930.KS": ("^KS11", "KRX")}
 
 
 def load(ticker: str) -> pd.DataFrame:
@@ -70,10 +73,18 @@ def sample(stats) -> str:
     return f"[yellow]{stats.n}![/yellow]" if stats.is_underpowered else str(stats.n)
 
 
-def show_warnings() -> None:
+def universe_info(ticker: str) -> tuple[str, int]:
+    """종목이 속한 시장의 유니버스 이름과 크기."""
+    name = universe_for(PAIRS[ticker][1], DEFAULT_CONFIG.universe)
+    closes = pd.read_parquet(FIXTURE_DIR / f"universe_{name}_closes.parquet")
+    return name, closes.shape[1]
+
+
+def show_warnings(tickers: list[str]) -> None:
     """편향 경고 + RS 근사 경고. 숫자를 보기 전에 읽어야 하는 것들이다."""
     body = "\n\n".join(f"[bold]•[/bold] {w}" for w in BIAS_WARNINGS)
-    body += f"\n\n[bold]•[/bold] {rs_universe_warning().message}"
+    for name, size in dict(universe_info(t) for t in tickers).items():
+        body += f"\n\n[bold]•[/bold] {survivorship_warning(name, size).message}"
     console.print(
         Panel(
             body,
@@ -85,14 +96,19 @@ def show_warnings() -> None:
 
 
 def build_injections(ticker: str, stock: pd.DataFrame, benchmark: pd.DataFrame):
-    """시점별 regime / stage / RS. 전부 t 이하 데이터로만 계산된 시리즈다."""
+    """시점별 regime / stage / RS. 전부 t 이하 데이터로만 계산된 시리즈다.
+
+    RS는 Phase 3.5부터 유니버스 교차단면 순위다 (지수 대비 근사가 아니다).
+    """
     cfg = DEFAULT_CONFIG
+    universe_name, _ = universe_info(ticker)
+    closes = pd.read_parquet(FIXTURE_DIR / f"universe_{universe_name}_closes.parquet")
+
+    percentiles = rs_percentile_frame(rs_score_frame(closes, cfg.universe), cfg.universe)
     return {
         "regime_by_date": regime_series(benchmark, cfg.regime),
         "stage_by_date": stage_series(stock, cfg.regime),
-        "rs_percentile_by_date": approximate_rs_percentile_series(
-            stock["close"], benchmark["close"], cfg.universe
-        ),
+        "rs_percentile_by_date": rs_percentile_series(ticker, percentiles),
     }
 
 
@@ -117,7 +133,7 @@ def show_setup(ticker: str, stock: pd.DataFrame, warmup: int, injections: dict) 
     table.add_column("항목", style="bold")
     table.add_column("값")
     table.add_row("데이터", f"{len(stock)}봉  {stock.index[0].date()} ~ {stock.index[-1].date()}")
-    table.add_row("벤치마크", PAIRS[ticker])
+    table.add_row("벤치마크", PAIRS[ticker][0])
     table.add_row("워밍업", f"{warmup}봉 (RS 가용 시점까지 늘림)")
     evaluated = len(stock) - warmup - max(DEFAULT_CONFIG.backtest.horizons) - 1
     table.add_row("평가 구간", f"{evaluated}봉")
@@ -332,12 +348,12 @@ def main() -> int:
     cfg = DEFAULT_CONFIG
 
     console.print()
-    show_warnings()
+    show_warnings(tickers)
     console.print()
 
     all_results: dict[str, dict[str, list[BacktestResult]]] = {}
     for ticker in tickers:
-        stock, benchmark = load(ticker), load(PAIRS[ticker])
+        stock, benchmark = load(ticker), load(PAIRS[ticker][0])
         injections = build_injections(ticker, stock, benchmark)
         warmup = warmup_for(stock, injections)
         run_config = replace(

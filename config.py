@@ -127,15 +127,20 @@ class RiskConfig:
 
 @dataclass(frozen=True)
 class UniverseConfig:
-    """RS 백분위 계산용 유니버스."""
+    """RS 백분위 계산용 유니버스.
 
-    source: str = "sp500"
+    RS는 '같은 시점 유니버스 내 순위'다. 시장이 다르면 거래일이 다르므로
+    유니버스도 시장별로 분리한다 — 섞으면 서로 다른 날짜를 비교하게 된다.
+    """
+
+    universe_by_exchange: tuple[tuple[str, str], ...] = (("US", "us_large"), ("KRX", "kospi"))
+    default_universe: str = "us_large"
+
     rs_lookback_days: int = 252
     rs_weights: tuple[float, ...] = (0.4, 0.2, 0.2, 0.2)
-    min_universe_size: int = 100
-    # 근사 RS 전용 (Phase 3.5 전까지). 점수를 자기 과거 분포에서 순위화할 때의 창.
-    # rs_lookback_days와 같게 두면 가용 시작이 252+252봉이라 3년치의 절반을 버린다.
-    rs_rank_window: int = 126
+    # 이 수 미만이면 백분위를 내지 않는다. 해상도가 100/n p 단위라
+    # 표본이 적으면 임계값 부근 판정이 거칠어지기 때문이다.
+    min_universe_size: int = 30
 
 
 @dataclass(frozen=True)

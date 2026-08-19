@@ -5,20 +5,39 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 3 완료)
+## 현재 상태 (Phase 3.5 완료)
 
-계약(v1.1.0) + 데이터 + 지표 + 하네스 + **미너비니 전략 1종**까지 구현됐다.
+계약(v1.1.0) + 데이터 + 지표 + 하네스 + **미너비니 전략** + **유니버스 RS**까지 구현됐다.
 
 - **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/` 목업 3종
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
-  `data/fetcher.py`, `tests/fixtures/` 고정 CSV 4종(종목 2 + 지수 2)
+  `data/fetcher.py`, 고정 CSV 픽스처
 - **Phase 2 (하네스)**: `backtest/harness.py`, `strategies/base.py`(템플릿 메서드),
   `strategies/dummy.py`(검증용 더미 3종), `core/context.py`
-- **Phase 3 (전략)**: `strategies/minervini.py`, `regime/market.py`,
-  `data/universe.py`의 근사 RS
+- **Phase 3 (전략)**: `strategies/minervini.py`, `regime/market.py`
+- **Phase 3.5 (유니버스)**: `data/universes/*.txt` 목록, 교차단면 RS 백분위,
+  다종목 패널 집계(`evaluate_panel`), 지표 사전 계산
 - **미구현**: 나머지 전략 3종(와인스타인/CANSLIM/Qullamaggie), `risk/planner.py`,
-  `render/`, 진짜 유니버스 RS(Phase 3.5), `main.py`의 진단 파이프라인
+  `render/`, `main.py`의 진단 파이프라인
 - `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+
+### 표본은 종목을 늘려서만 모인다
+
+미너비니는 선별적이라 종목 하나당 3년에 5~24건밖에 진입하지 않는다.
+`evaluate_panel()`이 여러 종목의 **원본 Outcome을 합쳐** 다시 요약한다 —
+종목별 요약을 평균내면 표본이 적은 종목에 과한 가중치가 실린다.
+US 29종목 풀링으로 진입 320건, KOSPI 10종목으로 74건이 모인다.
+
+### 지표는 시계열로 한 번만 계산한다
+
+`build_indicator_frame()`이 지표를 한 번 계산하고 `snapshot_at()`이 시점만 뽑는다.
+백테스트가 시점마다 윈도우 전체를 재계산하던 O(n²)를 O(n)으로 줄인 것으로,
+실측 33배(6ms -> 0.18ms/봉) 빨라졌다.
+
+안전한 이유는 모든 지표가 후방 참조만 하기 때문이며, 이는 가정이 아니라
+`tests/test_snapshot.py`가 '전체로 계산한 t번째 값 == df[:t+1]로 계산한 마지막 값'을
+검증하는 성질이다. look-ahead 감사도 두 패스에서 길이가 다른 df로 프레임을 만들어
+교차 확인한다.
 
 ### 전략을 추가할 때 반드시 볼 것
 
@@ -50,17 +69,22 @@
 시리즈 안에 스며든 미래 참조를 잡지 못한다. `tests/test_regime_and_rs.py`가
 '전체 데이터로 만든 시리즈의 t값 == t에서 잘라 계산한 값'을 검증해 이를 잠근다.
 
-### RS는 Phase 3.5 전까지 근사치다 — 재는 대상이 다르다
+### RS는 유니버스 교차단면 순위다
 
-`approximate_rs_percentile_series()`는 지수 대비 상대강도를 **자기 과거 분포**에서
-순위화한다. 진짜 유니버스 백분위와 재는 대상이 다르다:
+`rs_percentile_frame()`이 날짜별로 유니버스 종목들의 RS 점수를 순위화한다.
+정의 그대로 '같은 시점에 다른 종목들과 비교한 순위'다.
 
-- 진짜 백분위: "다른 종목들보다 강한가" (수준)
-- 현재 근사: "자기 과거보다 상대강도가 붙고 있는가" (가속도)
+- 유니버스는 **시장별로 분리**한다 (`data/universes/us_large.txt`, `kospi.txt`).
+  거래일이 다른 시장을 섞으면 서로 다른 날짜를 비교하게 된다.
+- 구성종목이 `min_universe_size` 미만인 날짜는 백분위를 내지 않는다 (해상도 부족).
+- 유니버스에 없는 종목은 `rs_percentile_against()`로 유니버스 분포 대비 순위를 낸다.
+- **생존편향은 제거하지 못했다.** 목록이 현재 상장 종목만 담기 때문이다.
+  `survivorship_warning()`을 리포트에 반드시 실을 것.
 
-꾸준히 시장을 이기는 종목은 중간 점수를 받는다. 따라서 미너비니 RS 게이트(>= 70)는
-지금 '강한 종목'이 아니라 '최근 상대강도가 붙는 종목'을 고른다.
-이 차이를 잊으면 백테스트 결과를 오독한다. `rs_universe_warning()`을 리포트에 실을 것.
+Phase 3까지 쓰던 지수 대비 근사(`approximate_rs_percentile_series`)는 **삭제했다**.
+그것은 '자기 과거 대비 가속도'를 재서 꾸준히 시장을 이기는 종목이 중간 점수를 받았다.
+두 가지 RS 개념을 남겨 두면 잘못된 쪽을 쓰는 사고가 나므로,
+유니버스가 없으면 RS는 None이고 게이트는 UNAVAILABLE이다.
 
 ### look-ahead 방지는 두 겹이다
 
@@ -203,7 +227,8 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `core/types.py` | 데이터 계약. 로직 없음 |
 | `core/context.py` | `StockContext` — 지표 계산이 끝난 상태 객체 |
 | `data/fetcher.py` | yfinance 3년치 OHLCV + parquet 캐시 |
-| `data/universe.py` | RS 백분위 계산용 유니버스 |
+| `data/universe.py` | 유니버스 교차단면 RS 백분위 |
+| `data/universes/*.txt` | 유니버스 구성 종목 목록. 생존편향 경고 포함 |
 | `indicators/core.py` | SMA/EMA/RSI/MACD/BB/ATR 직접 구현 |
 | `strategies/base.py` | `Strategy` Protocol + `StrategyBase` 템플릿 |
 | `strategies/*.py` | 전략별 GATE/SCORE 구현 |
@@ -259,7 +284,7 @@ python -m pytest tests/ -q
 ```
 
 ```bash
-python scripts/verify_phase3.py
+python scripts/verify_phase3_5.py
 ```
 
 ```bash

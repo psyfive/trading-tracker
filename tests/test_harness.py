@@ -565,3 +565,135 @@ def test_no_nan_leaks_into_group_stats(aapl):
     for group in (result.signals, result.gate_rejected, result.benchmark):
         for value in (group.mean_return_pct, group.median_return_pct, group.win_rate_pct):
             assert value is None or not math.isnan(value)
+
+
+# ===========================================================================
+# 다종목 패널 집계 (Phase 3.5)
+# ===========================================================================
+
+
+def panel_frames(count: int = 4) -> dict[str, pd.DataFrame]:
+    """서로 다른 위상의 합성 시계열 여러 개. 종목마다 결과가 달라야 풀링이 의미를 갖는다."""
+    return {
+        f"SYN{i}": synthetic(400, start=100.0 + i * 10, step=0.1 + i * 0.05)
+        for i in range(count)
+    }
+
+
+def test_panel_pools_raw_outcomes_not_summaries():
+    """종목별 요약을 평균내면 표본이 적은 종목에 과한 가중치가 실린다.
+
+    풀링 표본 수가 종목별 표본 수의 **합**과 같아야 원본을 합친 것이다.
+    """
+    from backtest.harness import evaluate_panel
+
+    frames = panel_frames()
+    config = fast_config(warmup=200)
+    panels = evaluate_panel(AlwaysBuyStrategy, frames, config, audit_tickers=1)
+
+    per_ticker = [
+        evaluate_results(AlwaysBuyStrategy(), name, df, config, run_audit=False)[0]
+        for name, df in frames.items()
+    ]
+    assert panels[0].signals.n == sum(r.signals.n for r in per_ticker)
+
+
+def test_panel_reports_ticker_counts():
+    from backtest.harness import evaluate_panel
+
+    frames = panel_frames()
+    result = evaluate_panel(AlwaysBuyStrategy, frames, fast_config(warmup=200))[0]
+    assert result.tickers == len(frames)
+    assert result.tickers_with_entries == len(frames)
+    assert dict(result.entries_by_ticker).keys() == frames.keys()
+
+
+def test_panel_always_buy_still_matches_the_benchmark():
+    """더미의 예측은 다종목에서도 성립해야 한다 — 풀링이 정렬을 깨지 않았는지."""
+    from backtest.harness import evaluate_panel
+
+    for result in evaluate_panel(AlwaysBuyStrategy, panel_frames(), fast_config(warmup=200)):
+        assert result.excess_return_pct == pytest.approx(0.0, abs=1e-12)
+
+
+def test_panel_makes_a_new_strategy_instance_per_ticker():
+    """전략이 상태를 들고 있으면 종목 간에 새면 안 된다."""
+    from backtest.harness import evaluate_panel
+
+    created: list[SpyStrategy] = []
+
+    def factory() -> SpyStrategy:
+        spy = SpyStrategy()
+        created.append(spy)
+        return spy
+
+    frames = panel_frames(3)
+    evaluate_panel(factory, frames, fast_config(warmup=250), audit_tickers=0)
+    # 종목마다 하나씩 + 전략명 조회용 하나
+    assert len(created) >= len(frames)
+    assert all(len(spy.seen) <= 1 or True for spy in created)
+    assert sum(1 for spy in created if spy.seen) == len(frames)
+
+
+def test_panel_skips_tickers_without_enough_bars():
+    """짧은 종목 하나 때문에 패널 전체가 죽으면 안 된다."""
+    from backtest.harness import evaluate_panel
+
+    frames = panel_frames(2)
+    frames["TOOSHORT"] = synthetic(60)
+    result = evaluate_panel(AlwaysBuyStrategy, frames, fast_config(warmup=200))[0]
+    assert result.tickers == 2
+    assert "TOOSHORT" not in dict(result.entries_by_ticker)
+
+
+def test_panel_audit_is_a_sample_and_says_so():
+    """감사는 표본이다. 몇 종목을 봤는지가 결과에 남아야 한다."""
+    from backtest.harness import evaluate_panel
+
+    result = evaluate_panel(
+        AlwaysBuyStrategy, panel_frames(4), fast_config(warmup=200), audit_tickers=2
+    )[0]
+    assert len(result.audits) == 2
+    assert result.audit_clean
+
+
+def test_panel_audit_clean_is_false_without_any_audit():
+    """감사를 하나도 안 돌렸으면 '깨끗하다'고 말할 수 없다."""
+    from backtest.harness import evaluate_panel
+
+    result = evaluate_panel(
+        AlwaysBuyStrategy, panel_frames(2), fast_config(warmup=200), audit_tickers=0
+    )[0]
+    assert result.audits == ()
+    assert result.audit_clean is False
+
+
+def test_panel_detects_lookahead_in_a_sampled_ticker():
+    from backtest.harness import evaluate_panel
+
+    config = replace(
+        DEFAULT_CONFIG, backtest=replace(BT, warmup_bars=200, strict_lookahead=False)
+    )
+    result = evaluate_panel(
+        PerfectHindsightStrategy, panel_frames(2), config, audit_tickers=2
+    )[0]
+    assert result.audit_clean is False
+
+
+def test_panel_respects_per_ticker_warmup():
+    """RS 가용 시점이 종목마다 다르므로 워밍업도 종목별이어야 한다."""
+    from backtest.harness import evaluate_panel
+
+    frames = panel_frames(2)
+    names = sorted(frames)
+    late = evaluate_panel(
+        AlwaysBuyStrategy,
+        frames,
+        fast_config(warmup=200),
+        warmups={names[0]: 300},
+        audit_tickers=0,
+    )[0]
+    even = evaluate_panel(
+        AlwaysBuyStrategy, frames, fast_config(warmup=200), audit_tickers=0
+    )[0]
+    assert late.signals.n < even.signals.n

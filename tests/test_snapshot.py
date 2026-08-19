@@ -221,3 +221,45 @@ def test_short_history_snapshot_also_passes_the_contract(aapl):
         consensus=ConsensusSummary(total_strategies=0),
     )
     assert report.indicators.sma200 is None
+
+
+# ===========================================================================
+# 사전 계산 프레임 — 시점별 재계산과 동치인가 (리뷰 E6)
+# ===========================================================================
+
+
+@pytest.mark.parametrize("position", [260, 400, 550, 700])
+def test_precomputed_frame_equals_a_fresh_window_snapshot(aapl, position):
+    """**백테스트 성능 최적화의 안전성 근거.**
+
+    전체 시계열로 한 번 계산한 프레임의 t번째 값과, df[:t+1]로 그 자리에서 계산한
+    마지막 값이 같아야 한다. 다르면 어떤 지표가 미래를 보고 있다는 뜻이고,
+    사전 계산을 쓰는 순간 백테스트 전체가 조용히 오염된다.
+    """
+    from indicators.snapshot import build_indicator_frame, snapshot_at
+
+    frame = build_indicator_frame(aapl, IND)
+    precomputed = snapshot_at(frame, position)
+    fresh = build_indicator_snapshot(aapl.iloc[: position + 1], IND)
+    assert precomputed == fresh
+
+
+def test_precomputed_frame_matches_at_every_field(aapl):
+    """필드 하나라도 어긋나면 어느 지표인지 알려준다."""
+    from indicators.snapshot import build_indicator_frame, snapshot_at
+
+    position = 500
+    precomputed = snapshot_at(build_indicator_frame(aapl, IND), position)
+    fresh = build_indicator_snapshot(aapl.iloc[: position + 1], IND)
+    for field in IndicatorSnapshot.model_fields:
+        assert getattr(precomputed, field) == getattr(fresh, field), field
+
+
+def test_appending_future_bars_does_not_change_a_past_snapshot(aapl):
+    """미래 봉을 덧붙여도 과거 시점의 지표가 바뀌면 안 된다."""
+    from indicators.snapshot import build_indicator_frame, snapshot_at
+
+    position = 400
+    short = snapshot_at(build_indicator_frame(aapl.iloc[:600], IND), position)
+    long = snapshot_at(build_indicator_frame(aapl, IND), position)
+    assert short == long

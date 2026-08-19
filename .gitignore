@@ -7,6 +7,8 @@ venv/
 # parquet 데이터 캐시
 .cache/
 *.parquet
+# 단, 고정 픽스처는 커밋한다 (테스트가 네트워크를 타지 않기 위해)
+!tests/fixtures/*.parquet
 
 .pytest_cache/
 .ruff_cache/

@@ -1,4 +1,4 @@
-"""시점별 주입 시리즈(regime / stage / RS) 테스트.
+"""시점별 주입 시리즈(regime / stage) 테스트. RS는 test_universe.py.
 
 **이 파일에서 가장 중요한 것은 point-in-time 검증이다.**
 
@@ -19,13 +19,6 @@ import pytest
 
 from config import DEFAULT_CONFIG
 from core.types import MarketRegime, Stage
-from data.universe import (
-    approximate_rs_percentile_series,
-    benchmark_for,
-    relative_strength_line,
-    rs_line_new_high_series,
-    rs_universe_warning,
-)
 from regime.market import (
     classify_regime,
     classify_stage,
@@ -88,29 +81,6 @@ def test_stage_series_value_matches_a_truncated_recomputation(spy, position):
     truncated = spy.iloc[: position + 1]
     as_of = truncated.index[-1].date()
     assert series[as_of] is classify_stage(truncated, REGIME)
-
-
-@pytest.mark.parametrize("position", [500, 600, 700])
-def test_rs_series_value_matches_a_truncated_recomputation(aapl, spy, position):
-    """RS도 마찬가지다. 여기가 새면 백테스트 전체가 조용히 오염된다."""
-    full = approximate_rs_percentile_series(aapl["close"], spy["close"], UNIVERSE)
-    stock_cut = aapl.iloc[: position + 1]
-    as_of = stock_cut.index[-1].date()
-    truncated = approximate_rs_percentile_series(
-        stock_cut["close"], spy.loc[: stock_cut.index[-1], "close"], UNIVERSE
-    )
-    assert as_of in truncated
-    assert truncated[as_of] == pytest.approx(full[as_of])
-
-
-def test_rs_new_high_series_is_point_in_time(aapl, spy):
-    full = rs_line_new_high_series(aapl["close"], spy["close"], UNIVERSE)
-    cut = aapl.iloc[:600]
-    as_of = cut.index[-1].date()
-    truncated = rs_line_new_high_series(
-        cut["close"], spy.loc[: cut.index[-1], "close"], UNIVERSE
-    )
-    assert truncated[as_of] == full[as_of]
 
 
 def test_appending_future_bars_does_not_change_past_regime(spy):
@@ -202,95 +172,3 @@ def test_stage_series_covers_every_bar(aapl):
     series = stage_series(aapl, REGIME)
     assert len(series) == len(aapl)
     assert all(isinstance(v, Stage) for v in series.values())
-
-
-# ===========================================================================
-# RS 근사 — 근사임을 드러내는지
-# ===========================================================================
-
-
-def test_rs_line_uses_only_common_trading_days(aapl, kospi):
-    """미국 종목과 한국 지수처럼 거래일이 어긋나면 교집합만 쓴다."""
-    line = relative_strength_line(aapl["close"], kospi["close"])
-    assert len(line) <= min(len(aapl), len(kospi))
-    assert line.notna().all()
-
-
-def test_rs_percentile_is_bounded(aapl, spy):
-    values = approximate_rs_percentile_series(aapl["close"], spy["close"], UNIVERSE).values()
-    assert values
-    assert all(0.0 <= v <= 100.0 for v in values)
-
-
-def test_rs_is_unavailable_before_enough_history(aapl, spy):
-    """순위를 낼 만큼 과거가 없으면 날짜 자체가 없다 — 0으로 채우지 않는다."""
-    series = approximate_rs_percentile_series(aapl["close"], spy["close"], UNIVERSE)
-    early_dates = [ts.date() for ts in aapl.index[:100]]
-    assert not any(d in series for d in early_dates)
-
-
-def test_accelerating_relative_strength_ranks_higher(spy):
-    """이 근사가 실제로 재는 것: 상대강도의 **가속도**다.
-
-    자기 과거 분포에서의 순위이므로, 최근 상대강도가 과거보다 강해지고 있으면 높은
-    순위를 받는다. 아래는 그 성질을 잠근다.
-    """
-    n = len(spy)
-    accelerating = pd.Series(
-        [100.0 * (1.0 + 0.000004 * i * i) for i in range(n)], index=spy.index, name="close"
-    )
-    decelerating = pd.Series(
-        [100.0 * (1.0 + 0.004 * i - 0.000004 * i * i) for i in range(n)],
-        index=spy.index,
-        name="close",
-    )
-    fast = approximate_rs_percentile_series(accelerating, spy["close"], UNIVERSE)
-    slow = approximate_rs_percentile_series(decelerating, spy["close"], UNIVERSE)
-    last = max(fast)
-    assert fast[last] > slow[last]
-
-
-def test_steady_outperformance_does_not_score_high(spy):
-    """**근사의 핵심 한계.** 꾸준히 벤치마크를 이기는 종목은 높은 점수를 받지 못한다.
-
-    자기 과거 대비 순위이므로, 일정한 속도로 앞서는 종목의 RS 점수는 시간에 대해
-    평탄하고 순위는 중간값 근처로 수렴한다. 진짜 유니버스 백분위였다면 이런 종목이
-    상위권이어야 한다.
-
-    이 한계 때문에 미너비니 RS 게이트(>= 70)는 '강한 종목'이 아니라
-    '최근 상대강도가 붙고 있는 종목'을 고르게 된다. Phase 3.5에서 진짜 유니버스
-    백분위로 교체되기 전까지 이 차이를 잊으면 백테스트 결과를 오독하게 된다.
-    """
-    n = len(spy)
-    steady = pd.Series(
-        [100.0 * (1.0 + 0.004 * i) for i in range(n)], index=spy.index, name="close"
-    )
-    ranks = approximate_rs_percentile_series(steady, spy["close"], UNIVERSE)
-    last = max(ranks)
-    assert ranks[last] < 70.0, "꾸준한 초과성과가 상위권으로 나오면 근사 성질이 바뀐 것이다"
-
-
-def test_rs_universe_warning_says_it_is_an_approximation():
-    """근사치를 진짜 백분위인 척 흘리지 않는다."""
-    warning = rs_universe_warning()
-    assert "근사" in warning.message
-    assert warning.field == "indicators.rs_percentile"
-
-
-def test_benchmark_selection_by_exchange():
-    assert benchmark_for("AAPL", REGIME, "US") == "SPY"
-    assert benchmark_for("005930.KS", REGIME, "KRX") == "^KS11"
-    assert benchmark_for("7203.T", REGIME, None) == REGIME.default_benchmark
-
-
-def test_universe_based_functions_are_still_deferred():
-    """진짜 유니버스 백분위는 Phase 3.5다. 근사치로 대체된 척하지 않는다."""
-    from data.universe import compute_rs_scores, load_universe_tickers, rs_percentile
-
-    for call in (
-        lambda: load_universe_tickers(UNIVERSE),
-        lambda: compute_rs_scores(pd.DataFrame(), UNIVERSE),
-        lambda: rs_percentile("AAPL", pd.Series(dtype=float)),
-    ):
-        with pytest.raises(NotImplementedError, match="Phase 3.5"):
-            call()
