@@ -479,3 +479,38 @@ def test_stage_parameters_cannot_drift_from_the_regime_config():
         replace(DEFAULT_CONFIG, weinstein=replace(WEINSTEIN, ma_period_daily=100))
     with pytest.raises(ValueError, match="Stage"):
         replace(DEFAULT_CONFIG, weinstein=replace(WEINSTEIN, stage_flat_slope_pct=0.0))
+
+
+# ===========================================================================
+# 진입 정의 — 돌파를 확인하고 살 것인가 (config로 재는 대상)
+# ===========================================================================
+
+
+def test_pivot_ready_is_a_buy_by_default():
+    """점수 기준만 낮추면 돌파 전에도 BUY가 나온다 — 이것이 현재의 진입 정의다."""
+    verdict = strategy(buy_min_score_pct=0.0).evaluate(context(uptrend_with_range()))
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_requiring_a_breakout_downgrades_pivot_ready_to_watch():
+    verdict = strategy(buy_min_score_pct=0.0, require_breakout_for_buy=True).evaluate(
+        context(uptrend_with_range())
+    )
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 확인 후" in note for note in verdict.notes)
+
+
+def test_requiring_a_breakout_does_not_touch_other_setup_states():
+    df = uptrend_with_range()
+    trading_range = detect_range(context(df), WEINSTEIN)
+    pushed = df.copy()
+    price = trading_range.resistance * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    off = strategy(buy_min_score_pct=0.0).evaluate(context(pushed))
+    on = strategy(buy_min_score_pct=0.0, require_breakout_for_buy=True).evaluate(context(pushed))
+    assert off.setup_state is not SetupState.PIVOT_READY
+    assert on.verdict is off.verdict

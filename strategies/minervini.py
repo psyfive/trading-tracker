@@ -683,6 +683,14 @@ class MinerviniStrategy(StrategyBase):
                     "거래량 확인 없이 BUY를 내지 않는다 — 장 마감 후 재평가",
                 ]
 
+            # 진입 정의: 돌파를 확인하고 살 것인가, 피벗 근접에서 미리 살 것인가.
+            # 원전은 확인 후 진입이지만 어느 쪽이 나은지는 재서 정할 문제다 (config).
+            if setup is SetupState.PIVOT_READY and cfg.require_breakout_for_buy:
+                return Verdict.WATCH, [
+                    *notes,
+                    f"피벗 {base.pivot_price:.2f} 돌파 전이다 — 돌파 확인 후에만 진입한다",
+                ]
+
             # 돌파 거래량 — 돌파가 일어난 뒤에만 확인 가능한 조건이다.
             if setup is SetupState.BREAKOUT:
                 confirmed, volume_note = self._breakout_volume_note(base)

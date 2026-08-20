@@ -428,3 +428,37 @@ def test_ema21_is_not_labelled_as_a_20_day_line():
     check = next(c for c in verdict.gate.checks if c.id == "price_above_ema21")
     assert "20일선" not in check.label
     assert "EMA21" in check.label
+
+
+# ===========================================================================
+# 진입 정의 — 돌파를 확인하고 살 것인가 (config로 재는 대상)
+# ===========================================================================
+
+
+def test_pivot_ready_is_a_buy_by_default():
+    verdict = strategy().evaluate(context(surge_then_consolidation()))
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_requiring_a_breakout_downgrades_pivot_ready_to_watch():
+    verdict = strategy(require_breakout_for_buy=True).evaluate(
+        context(surge_then_consolidation())
+    )
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 확인 후" in note for note in verdict.notes)
+
+
+def test_requiring_a_breakout_does_not_touch_other_setup_states():
+    df = surge_then_consolidation()
+    consolidation = detect_consolidation(context(df), QULLA)
+    pushed = df.copy()
+    price = consolidation.pivot_price * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    off = strategy().evaluate(context(pushed))
+    on = strategy(require_breakout_for_buy=True).evaluate(context(pushed))
+    assert off.setup_state is not SetupState.PIVOT_READY
+    assert on.verdict is off.verdict

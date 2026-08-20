@@ -534,3 +534,37 @@ def test_unavailable_constant_threshold_is_still_reported():
     rs_check = next(c for c in verdict.gate.checks if c.id == "rs_percentile")
     assert rs_check.status is CheckStatus.UNAVAILABLE
     assert rs_check.threshold == MINERVINI.min_rs_percentile
+
+
+# ===========================================================================
+# 진입 정의 — 돌파를 확인하고 살 것인가 (config로 재는 대상)
+# ===========================================================================
+
+
+def test_pivot_ready_is_a_buy_by_default():
+    """기본값은 '피벗 근접에서 미리 산다'다. 이 전제가 바뀌면 성과 수치가 전부 달라진다."""
+    verdict = strategy().evaluate(context(uptrend_with_base()))
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.BUY
+
+
+def test_requiring_a_breakout_downgrades_pivot_ready_to_watch():
+    verdict = strategy(require_breakout_for_buy=True).evaluate(context(uptrend_with_base()))
+    assert verdict.setup_state is SetupState.PIVOT_READY
+    assert verdict.verdict is Verdict.WATCH
+    assert any("돌파 확인 후" in note for note in verdict.notes)
+
+
+def test_requiring_a_breakout_does_not_touch_other_setup_states():
+    """플래그가 건드리는 것은 PIVOT_READY 하나뿐이어야 한다."""
+    df = uptrend_with_base()
+    base = detect_base(context(df), MINERVINI)
+    pushed = df.copy()
+    price = base.pivot_price * 1.02
+    pushed.iloc[-1, pushed.columns.get_loc("close")] = price
+    pushed.iloc[-1, pushed.columns.get_loc("high")] = price * 1.005
+
+    off = strategy().evaluate(context(pushed))
+    on = strategy(require_breakout_for_buy=True).evaluate(context(pushed))
+    assert off.setup_state is not SetupState.PIVOT_READY
+    assert on.verdict is off.verdict

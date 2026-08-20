@@ -27,8 +27,37 @@
 - **Phase 5 (파이프라인)**: `main.diagnose()`(유일한 오케스트레이션 지점),
   `risk/planner.py`, `render/cli.py`, `strategies/registry.py`,
   `data/universe.py`의 종가 수집, 스키마 1.4.0(`risk_plans`)
-- **미구현**: CANSLIM(재무 데이터 필요), `backtest.sweep`(파라미터 스윕),
-  워치리스트/다종목 스크리닝 계약
+- **Phase 6 (스윕·홀드아웃)**: `backtest/sweep.py`, `EvalWindow`(평가 시점 제한),
+  학습/홀드아웃 분할 + embargo, 진입 정의 플래그(`require_breakout_for_buy`)
+- **미구현**: CANSLIM(재무 데이터 필요), 워치리스트/다종목 스크리닝 계약
+
+### 파라미터는 학습 구간에서 고르고 홀드아웃으로 확인한다
+
+`backtest/sweep.py`. 3년 한 표본에서 후보 k개를 돌려 최고를 고르면 그 값에는 표본
+노이즈가 섞이고, 노이즈 부분은 다음 기간에 재현되지 않는다. 그래서 구조로 강제한다:
+
+- **선택은 `SweepResult.best_train`이 한다** — 학습 구간 성과만 본다. 홀드아웃 수치는
+  고른 뒤에 붙는 확인값이며, 보고 다시 고르면 그 순간 홀드아웃이 아니다.
+- **학습 표본이 `min_sample_size` 미만이면 고르지 않는다** (`best_train`이 None).
+  '고를 근거가 없다'와 '기본값이 최고다'는 다른 결론이다.
+- **두 구간 사이를 embargo만큼 비운다.** 보유기간이 겹치면 학습 막바지 시그널의 성과가
+  홀드아웃 봉으로 측정되어 구간이 섞인다. 기본값은 `max(horizons) + entry_offset_bars`.
+- 스윕은 **후보를 기각하는 도구**다. 홀드아웃에서 무너지면 과적합이라는 증거가 되지만,
+  살아남는 것은 '기각되지 않았다'는 뜻일 뿐 최적값이라는 뜻이 아니다.
+- `scripts/verify_phase6.py`는 측정만 하고 **config를 고치지 않는다.** 임계값 변경은
+  사람의 결정이다.
+
+**구간을 나눌 때 df를 잘라내지 않는다.** `EvalWindow`는 '평가할 시점'만 제한한다.
+뒤쪽 구간을 df째로 잘라 넘기면 그 구간의 지표가 워밍업 부족으로 None이 되어, 같은
+전략이 구간마다 다른 것을 보게 된다 — 분할의 목적은 '언제를 평가하는가'를 나누는
+것이지 '무엇을 아는가'를 바꾸는 것이 아니다.
+
+### 진입 정의는 config가 들고 있다
+
+`require_breakout_for_buy`(전략 3종 각자의 config). True면 PIVOT_READY(돌파 전 피벗
+근접)는 BUY가 아니라 WATCH다. 세 방법론의 원전은 모두 돌파를 확인하고 사지만 현재
+BUY의 대부분은 PIVOT_READY이며, 어느 쪽이 나은지는 재서 정할 문제다. 기본값 False를
+유지하는 이유는 조용히 바꾸면 이전 Phase의 수치와 비교가 불가능해지기 때문이다.
 
 ### 진단 한 건은 `main.diagnose()`로만 흐른다
 
@@ -376,12 +405,14 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `strategies/registry.py` | 전략 이름 -> 팩토리. 전략 목록의 단일 출처 |
 | `main.py` | CLI + `diagnose()` — 진단 파이프라인의 유일한 오케스트레이션 지점 |
 | `backtest/harness.py` | 과거 시점 재현 검증 러너 |
+| `backtest/sweep.py` | 파라미터 스윕 + 학습/홀드아웃 분할 |
 | `render/cli.py` | rich 렌더러 |
 | `render/json_out.py` | 프론트엔드용 직렬화 (유일한 진입점) |
 | `strategies/dummy.py` | 하네스 검증용 더미 3종. 매매 판단용이 아니다 |
 | `examples/*.json` | **실제 전략 출력**으로 생성한 예시 리포트 (`scripts/make_examples.py`) |
 | `docs/review_phase0-2.md` | Phase 0~2 비판적 리뷰와 조치 내역 |
 | `docs/review_phase3-4.md` | Phase 3~4 비판적 리뷰와 조치 내역 |
+| `docs/phase6_sweep.md` | 스윕·홀드아웃 측정 결과. 세 질문에 대한 답과 한계 |
 
 ## 코딩 컨벤션
 
@@ -418,6 +449,8 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 - ❌ `examples/*.json`을 손으로 고치지 말 것. `scripts/make_examples.py`로 재생성한다.
 - ❌ config에 있는 임계값을 코드가 소비하지 않은 채 두지 말 것. 스윕 대상 파라미터가
   무엇을 돌려도 결과가 같으면 그 config는 거짓말이다.
+- ❌ 홀드아웃 성과를 보고 파라미터를 고르지 말 것. 그 순간 홀드아웃이 아니게 된다.
+- ❌ 스윕 결과를 config에 자동 반영하지 말 것. 측정과 결정은 분리한다.
 - ❌ 미래 데이터 참조(look-ahead) 금지. 백테스트에서 `t` 시점 판정에 `t+1` 봉 사용 금지.
 - ❌ 네트워크 호출을 지표/전략 레이어에서 하지 말 것. 데이터는 `data/`에서만.
 - ❌ 테스트 없는 지표 추가 금지.
@@ -431,6 +464,10 @@ python -m pytest tests/ -q
 
 ```bash
 python main.py AAPL --equity 100000
+```
+
+```bash
+python scripts/verify_phase6.py
 ```
 
 ```bash

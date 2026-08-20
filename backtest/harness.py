@@ -100,6 +100,28 @@ def _evaluation_range(df: pd.DataFrame, backtest: BacktestConfig) -> range:
 
 
 @dataclass(frozen=True)
+class EvalWindow:
+    """평가할 시점 범위. 학습(train)/홀드아웃 분할에 쓴다.
+
+    **df를 잘라내지 않고 평가 시점만 제한한다.** 뒤쪽 구간을 df째로 잘라 넘기면
+    그 구간의 지표가 워밍업 부족으로 None이 되어, 같은 전략이 구간마다 다른 것을
+    보게 된다. 분할의 목적은 '언제를 평가하는가'를 나누는 것이지 '무엇을 아는가'를
+    바꾸는 것이 아니다.
+
+    start는 포함, end는 제외다 (파이썬 슬라이스와 같은 규약).
+    """
+
+    start: date | None = None
+    end: date | None = None
+    label: str = "전체"
+
+    def contains(self, day: date) -> bool:
+        if self.start is not None and day < self.start:
+            return False
+        return not (self.end is not None and day >= self.end)
+
+
+@dataclass(frozen=True)
 class Signal:
     """한 시점의 평가 결과. 게이트 탈락도 기록한다 (탈락군 집계를 위해).
 
@@ -504,12 +526,17 @@ def replay(
     regime_by_date: RegimeByDate | None = None,
     stage_by_date: StageByDate | None = None,
     rs_percentile_by_date: RsByDate | None = None,
+    window: EvalWindow | None = None,
 ) -> list[Signal]:
     """워밍업 이후 모든 봉에서 전략을 평가한다. 게이트 탈락도 기록한다.
 
     각 시점에서 전략이 보는 것은 df.iloc[:t+1]뿐이다.
     진입(entry_date/entry_price)은 verdict가 BUY일 때만 기록한다 —
     게이트 통과는 진입이 아니다.
+
+    window를 주면 그 구간의 봉만 **평가**한다. 컨텍스트는 여전히 t 이하 전체이므로
+    홀드아웃 구간을 평가할 때도 지표 워밍업은 학습 구간 데이터로 채워진다
+    (EvalWindow docstring 참조).
     """
     backtest = config.backtest
     offset = backtest.entry_offset_bars
@@ -517,6 +544,8 @@ def replay(
     frame = build_indicator_frame(df, config.indicators)
 
     for position in _evaluation_range(df, backtest):
+        if window is not None and not window.contains(df.index[position].date()):
+            continue
         verdict = _evaluate_at(
             strategy, ticker, df, position, config, regime=regime,
             regime_by_date=regime_by_date, stage_by_date=stage_by_date,
@@ -601,11 +630,6 @@ def evaluate_results(
     return results
 
 
-def sweep(*args, **kwargs):
-    """dataclasses.replace()로 설정 변형본을 만들어 파라미터 스윕. Phase 3 이후."""
-    raise NotImplementedError("파라미터 스윕은 진짜 전략이 생긴 뒤에 의미가 있다 (Phase 3+)")
-
-
 # ---------------------------------------------------------------------------
 # 다종목 패널 집계
 # ---------------------------------------------------------------------------
@@ -633,6 +657,8 @@ class PanelResult:
     by_score_bucket: tuple[GroupStats, ...]
     audits: tuple[LookaheadAudit, ...]
     entries_by_ticker: tuple[tuple[str, int], ...]
+    # 어느 구간을 평가한 결과인지. 학습/홀드아웃 수치가 표에서 섞이면 해석이 뒤집힌다.
+    window_label: str = "전체"
     # 봉이 모자라 평가조차 못 한 티커. tickers는 성공한 종목 수만 세므로 이 목록이
     # 없으면 '29종목 중 20종목이 스킵된 패널'과 '원래 9종목짜리 패널'을 구분할 수 없다.
     skipped_tickers: tuple[str, ...] = ()
@@ -657,6 +683,7 @@ def evaluate_panel(
     injections: Mapping[str, Mapping[str, object]] | None = None,
     warmups: Mapping[str, int] | None = None,
     audit_tickers: int = 5,
+    window: EvalWindow | None = None,
 ) -> list[PanelResult]:
     """여러 종목에 같은 전략을 돌리고 결과를 풀링한다.
 
@@ -692,7 +719,7 @@ def evaluate_panel(
         inject = dict(injections.get(ticker, {}))
 
         try:
-            signals = replay(make_strategy(), ticker, df, run_config, **inject)
+            signals = replay(make_strategy(), ticker, df, run_config, window=window, **inject)
         except InsufficientBacktestDataError:
             # 패널 레벨에서는 티커 하나가 짧다고 전체를 멈추지 않는다. 다만 조용히
             # 넘기지도 않는다 — 스킵 사실이 결과 객체에 남아야 표본 해석이 가능하다.
@@ -723,6 +750,7 @@ def evaluate_panel(
             by_score_bucket=bucket_outcomes(groups.entered, backtest),
             audits=tuple(audits),
             entries_by_ticker=tuple(sorted(entries.items())),
+            window_label="전체" if window is None else window.label,
             skipped_tickers=tuple(skipped),
         )
         for horizon, groups in pooled.items()

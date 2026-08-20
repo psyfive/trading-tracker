@@ -177,6 +177,12 @@ class MinerviniConfig:
     ideal_base_length_days: int = 40
     min_contractions: int = 2
     buy_min_score_pct: float = 60.0         # 만점 대비 이 비율 이상이어야 BUY
+    # 돌파를 **확인하고** 살 것인가. True면 PIVOT_READY(돌파 전 피벗 근접)는 BUY가
+    # 아니라 WATCH다. 세 방법론의 원전은 모두 돌파 확인 후 진입이지만, 현재 BUY의
+    # 대부분이 PIVOT_READY이므로 진입 정의를 바꾸면 성과 수치가 전부 달라진다.
+    # 기본값을 False로 둔 이유: 어느 쪽이 나은지는 재서 정할 문제이고(backtest/sweep.py),
+    # 재기 전에 조용히 바꾸면 이전 Phase의 수치와 비교가 불가능해진다.
+    require_breakout_for_buy: bool = False
 
     # 배점 (합계 100)
     weight_contraction: float = 25.0
@@ -222,6 +228,12 @@ class WeinsteinConfig:
     ideal_stage2_age_days: int = 40          # Stage 2 진입 후 이 정도까지가 '초기'
     max_stage2_age_days: int = 150           # 이보다 오래되면 신선도 0점
     buy_min_score_pct: float = 60.0
+    # 돌파를 **확인하고** 살 것인가. True면 PIVOT_READY(돌파 전 피벗 근접)는 BUY가
+    # 아니라 WATCH다. 세 방법론의 원전은 모두 돌파 확인 후 진입이지만, 현재 BUY의
+    # 대부분이 PIVOT_READY이므로 진입 정의를 바꾸면 성과 수치가 전부 달라진다.
+    # 기본값을 False로 둔 이유: 어느 쪽이 나은지는 재서 정할 문제이고(backtest/sweep.py),
+    # 재기 전에 조용히 바꾸면 이전 Phase의 수치와 비교가 불가능해진다.
+    require_breakout_for_buy: bool = False
 
     # 배점 (합계 100)
     weight_breakout_volume: float = 25.0
@@ -272,6 +284,12 @@ class QullamaggieConfig:
     pivot_proximity_pct: float = 3.0
     extended_pct_above_pivot: float = 5.0
     buy_min_score_pct: float = 60.0
+    # 돌파를 **확인하고** 살 것인가. True면 PIVOT_READY(돌파 전 피벗 근접)는 BUY가
+    # 아니라 WATCH다. 세 방법론의 원전은 모두 돌파 확인 후 진입이지만, 현재 BUY의
+    # 대부분이 PIVOT_READY이므로 진입 정의를 바꾸면 성과 수치가 전부 달라진다.
+    # 기본값을 False로 둔 이유: 어느 쪽이 나은지는 재서 정할 문제이고(backtest/sweep.py),
+    # 재기 전에 조용히 바꾸면 이전 Phase의 수치와 비교가 불가능해진다.
+    require_breakout_for_buy: bool = False
 
     # --- 돌파 확인: BUY의 필요조건 ---
     # 돌파 봉 거래량 / 50일 평균. 미너비니(1.5)와 같은 기준을 쓰되 값은 독립이다.
@@ -308,6 +326,15 @@ class BacktestConfig:
     min_sample_size: int = 30
     lookahead_audit_samples: int = 12
     strict_lookahead: bool = True
+
+    # --- 파라미터 스윕용 학습/홀드아웃 분할 (backtest/sweep.py) ---
+    # 뒤쪽 이 비율의 기간을 홀드아웃으로 떼어 둔다. 스윕은 학습 구간에서만 고르고,
+    # 홀드아웃은 고른 뒤에 한 번 보는 용도다 — 보고 다시 고르면 홀드아웃이 아니다.
+    holdout_fraction: float = 0.3
+    # 학습 구간 끝과 홀드아웃 시작 사이에 비워 두는 봉 수(embargo). 보유기간이 겹치면
+    # 학습 구간 막바지 시그널의 성과가 홀드아웃 봉으로 측정되어 두 구간이 섞인다.
+    # None이면 max(horizons) + entry_offset_bars 만큼 자동으로 잡는다.
+    embargo_bars: int | None = None
 
 
 @dataclass(frozen=True)
