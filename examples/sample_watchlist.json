@@ -1,0 +1,1364 @@
+{
+  "schema_version": "1.5.0",
+  "universe": "us_large",
+  "generated_at": "2026-08-19T21:00:00Z",
+  "regime": "CAUTION",
+  "entries": [
+    {
+      "ticker": "TXN",
+      "price": 307.6348876953125,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 95.65217391304348,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "BUY",
+          "score_pct": 77.16,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.3493
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "BUY",
+          "score_pct": 61.12,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.3493
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "BUY",
+          "score_pct": 86.28,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.3493
+        }
+      ],
+      "buy_strategies": [
+        "minervini",
+        "weinstein",
+        "qullamaggie"
+      ],
+      "agreement": "UNANIMOUS_BUY",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "KO",
+      "price": 80.95732116699219,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 60.86956521739131,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 6,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.75,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.4482
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "BUY",
+          "score_pct": 62.19,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.4482
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.4482
+        }
+      ],
+      "buy_strategies": [
+        "weinstein"
+      ],
+      "agreement": "SPLIT",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "MO",
+      "price": 72.81111907958984,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 71.30434782608695,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 7,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.875,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.6901
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "BUY",
+          "score_pct": 64.22,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.6901
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.6901
+        }
+      ],
+      "buy_strategies": [
+        "weinstein"
+      ],
+      "agreement": "SPLIT",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "NSC",
+      "price": 313.29010009765625,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 63.47826086956522,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 7,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.875,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.0793
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "BUY",
+          "score_pct": 72.76,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.0793
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.0793
+        }
+      ],
+      "buy_strategies": [
+        "weinstein"
+      ],
+      "agreement": "SPLIT",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "PM",
+      "price": 187.43605041503906,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 60.0,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 7,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.875,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.1483
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "BUY",
+          "score_pct": 65.35,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.1483
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.1483
+        }
+      ],
+      "buy_strategies": [
+        "weinstein"
+      ],
+      "agreement": "SPLIT",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "AAPL",
+      "price": 308.55389404296875,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 80.0,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 50.37,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.8198
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 73.98,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.8198
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.8198
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "AVGO",
+      "price": 413.485595703125,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 87.82608695652175,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 26.77,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 6.8141
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 72.88,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 6.8141
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "WATCH",
+          "score_pct": 58.2,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 6.8141
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "CAT",
+      "price": 878.2607421875,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 97.3913043478261,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 28.01,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 5.8485
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 41.99,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 5.8485
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 5.8485
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "CSCO",
+      "price": 119.96123504638672,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 96.52173913043478,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 55.7067,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -0.8471
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 43.99,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -0.8471
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -0.8471
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "ELV",
+      "price": 393.09051513671875,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 70.43478260869566,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "AVOID",
+          "score_pct": 56.57,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 1.6317
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "AVOID",
+          "score_pct": 65.13,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 1.6317
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 1.6317
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "FDX",
+      "price": 316.45904541015625,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 89.56521739130436,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 60.02,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.5419
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 46.13,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.5419
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.5419
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "GS",
+      "price": 992.3564453125,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 85.21739130434783,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 43.84,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.1139
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 81.69,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.1139
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -2.1139
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "LUV",
+      "price": 40.682350158691406,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 61.73913043478261,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 5,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.625,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.7445
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 69.15,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.7445
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 3.7445
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "QCOM",
+      "price": 237.28359985351562,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 94.78260869565217,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 7,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.875,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 4.0897
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 66.06,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 4.0897
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "WATCH",
+          "score_pct": 38.56,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 4.0897
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "SLB",
+      "price": 56.98124313354492,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 90.43478260869566,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 44.14,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.7807
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 47.22,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.7807
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BREAKOUT",
+          "to_pivot_pct": -1.7807
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "TGT",
+      "price": 124.64329528808594,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 82.6086956521739,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "WATCH",
+          "score_pct": 24.2133,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 4.0961
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 69.75,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 4.0961
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "WATCH",
+          "score_pct": 56.67,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 4.0961
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "UNP",
+      "price": 264.50579833984375,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 66.08695652173913,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 6,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.75,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.9567
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "WATCH",
+          "score_pct": 63.84,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.9567
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 3.9567
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "VLO",
+      "price": 246.00927734375,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 92.17391304347827,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "AVOID",
+          "score_pct": 29.58,
+          "gate_pass_count": 8,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 2.9729
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "AVOID",
+          "score_pct": 43.56,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 2.9729
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "AVOID",
+          "score_pct": 52.17,
+          "gate_pass_count": 5,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 1.0,
+          "setup_state": "FAILED_BREAKOUT",
+          "to_pivot_pct": 2.9729
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 1.0
+    },
+    {
+      "ticker": "NEE",
+      "price": 87.90613555908203,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 57.391304347826086,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 6,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.75,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 11.5189
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 11.5189
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.2,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 11.5189
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.8
+    },
+    {
+      "ticker": "WMT",
+      "price": 120.2699966430664,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_2",
+      "rs_percentile": 64.34782608695652,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 5,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.625,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 12.3805
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.8,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 12.3805
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 12.3805
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.8
+    },
+    {
+      "ticker": "AMT",
+      "price": 182.11163330078125,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_3",
+      "rs_percentile": 26.08695652173913,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.375,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.1414
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.1414
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 0.1414
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.6
+    },
+    {
+      "ticker": "MDLZ",
+      "price": 61.24661636352539,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_3",
+      "rs_percentile": 41.73913043478261,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.5,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3439
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.6,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3439
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3439
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.6
+    },
+    {
+      "ticker": "DE",
+      "price": 527.7820434570312,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_1",
+      "rs_percentile": 32.17391304347826,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.5,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 12.2517
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 12.2517
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 12.2517
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.5
+    },
+    {
+      "ticker": "ITW",
+      "price": 250.68191528320312,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_1",
+      "rs_percentile": 30.434782608695656,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.5,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.9691
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 3.9691
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.2,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 3.9691
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.5
+    },
+    {
+      "ticker": "PEP",
+      "price": 149.00233459472656,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_1",
+      "rs_percentile": 37.391304347826086,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 4,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.5,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3283
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3283
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.2,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 1.3283
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.5
+    },
+    {
+      "ticker": "ADBE",
+      "price": 244.75999450683594,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_4",
+      "rs_percentile": 6.086956521739131,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 0,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.0,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 8.3061
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 8.3061
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 8.3061
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.4
+    },
+    {
+      "ticker": "BDX",
+      "price": 146.59652709960938,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_1",
+      "rs_percentile": 22.608695652173914,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 3,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.375,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 5.1819
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 5.1819
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 5.1819
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.4
+    },
+    {
+      "ticker": "CMCSA",
+      "price": 24.871126174926758,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_4",
+      "rs_percentile": 10.434782608695652,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.125,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 27.2511
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "BASE_FORMING",
+          "to_pivot_pct": 27.2511
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "CONTRACTING",
+          "to_pivot_pct": 27.2511
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.4
+    },
+    {
+      "ticker": "ICE",
+      "price": 152.4039764404297,
+      "as_of": "2026-05-22",
+      "is_bar_complete": true,
+      "stage": "STAGE_4",
+      "rs_percentile": 23.47826086956522,
+      "strategies": [
+        {
+          "strategy_name": "minervini",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 8,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.125,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.8894
+        },
+        {
+          "strategy_name": "weinstein",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 2,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.4,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.8894
+        },
+        {
+          "strategy_name": "qullamaggie",
+          "verdict": "REJECTED_BY_GATE",
+          "score_pct": null,
+          "gate_pass_count": 1,
+          "gate_total": 5,
+          "gate_unavailable_count": 0,
+          "progress_ratio": 0.2,
+          "setup_state": "PIVOT_READY",
+          "to_pivot_pct": 2.8894
+        }
+      ],
+      "buy_strategies": [],
+      "agreement": "NONE",
+      "best_gate_progress": 0.4
+    }
+  ],
+  "failed": [],
+  "requested": 29,
+  "warnings": [
+    {
+      "code": "RS_UNIVERSE_MISSING",
+      "severity": "INFO",
+      "message": "RS 백분위가 'us_large' 유니버스 115종목 대비 순위다. 이 목록은 현재 상장 중인 종목만 담고 있어 과거 시점의 실제 구성종목이 아니다 — 그때 존재했다 사라진 종목이 분모에서 빠지므로 백분위가 낙관 쪽으로 치우친다. 시점별 구성종목 데이터가 없는 한 이 편향은 제거되지 않는다",
+      "field": "indicators.rs_percentile"
+    }
+  ]
+}

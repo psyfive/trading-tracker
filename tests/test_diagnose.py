@@ -76,7 +76,9 @@ def wired(monkeypatch, universe_closes):
             raise InvalidTickerError(f"{ticker}: 테스트 픽스처에 없다")
         return bundle_for(upper, state["ohlcv"][upper], complete=state["complete"])
 
-    def fake_load_universe(name, data_config, exchanges, *, use_cache=True, now=None):
+    def fake_load_universe(
+        name, data_config, exchanges, *, use_cache=True, now=None, progress=None
+    ):
         if state["universe_error"] is not None:
             raise state["universe_error"]
         return state["universe"]

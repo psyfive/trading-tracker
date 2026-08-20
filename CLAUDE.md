@@ -5,7 +5,7 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 5 완료)
+## 현재 상태 (Phase 7 완료)
 
 계약(v1.4.0) + 데이터 + 지표 + 하네스 + 전략 3종 + 유니버스 RS + **진단 파이프라인**까지
 구현됐다. `python main.py AAPL`이 실제로 동작한다.
@@ -29,7 +29,40 @@
   `data/universe.py`의 종가 수집, 스키마 1.4.0(`risk_plans`)
 - **Phase 6 (스윕·홀드아웃)**: `backtest/sweep.py`, `EvalWindow`(평가 시점 제한),
   학습/홀드아웃 분할 + embargo, 진입 정의 플래그(`require_breakout_for_buy`)
-- **미구현**: CANSLIM(재무 데이터 필요), 워치리스트/다종목 스크리닝 계약
+- **Phase 7 (워치리스트)**: `main.scan()`, `core/watchlist.py`, 스키마 1.5.0
+  (`WatchlistReport` — 두 번째 루트 계약), `MarketData`(시장 재료 1회 생성),
+  수집·스캔 진행 표시
+- **미구현**: CANSLIM(재무 데이터 필요), 웹 프론트엔드
+
+### 스캔은 진단을 여러 번 돌린 것이다
+
+`main.scan()`은 유니버스 종목마다 `diagnose()`를 **그대로** 부르고 결과를 요약해
+워치리스트로 조립한다. 요약용 별도 계산을 만들면 '목록에서는 BUY였는데 눌러 보니
+WATCH'가 언젠가 반드시 생긴다 — 판정 경로가 하나여야 목록과 상세가 같은 말을 한다.
+`tests/test_watchlist.py`와 `scripts/verify_phase7.py`가 이 일치를 실제로 대조한다.
+
+- **시장 공통 재료는 `MarketData`로 한 번만 만든다** (국면·유니버스 종가·RS 프레임).
+  종목마다 다시 만들면 116종목 스캔이 RS 프레임을 116번 계산한다.
+- 한 종목의 수집 실패는 스캔을 멈추지 않고 `failed`에 이유와 함께 남는다.
+  조용히 빠지면 '116종목 스캔'이라는 말이 거짓이 된다.
+- 실측 비용은 종목당 15~18ms다 (지표+전략 3종). 무거운 것은 수집이고 그것은
+  종목별 캐시로 이미 해결돼 있다 — 첫 진단 때 유니버스 OHLCV가 통째로 캐시된다.
+
+### 워치리스트는 요약 계약이다
+
+`WatchlistReport`(1.5.0)는 `DiagnosisReport`와 **다른 루트 계약**이다. 진단 리포트를
+그대로 나열하면 29종목에 440KB이고, 그중 대부분은 표 한 줄에 필요 없는 설명 문장이다
+(실측 요약 39KB = 8.8%). 상세가 필요하면 그 티커를 개별 진단한다.
+
+- `StrategySummary`에 `checks` / `components` / `notes` / `setup_metrics`를 넣지 말 것.
+  넣는 순간 요약이 아니게 된다 (`tests/test_types_contract.py`가 막는다).
+- **정렬이 계약이다**: `(BUY 전략 수, 게이트 진행률)` 내림차순, 동점은 티커순.
+  조립(`core/watchlist.py`)이 정렬하고 validator가 순서를 강제하므로 **렌더러는 다시
+  정렬하지 않는다.** 게이트 근접도가 두 번째 키인 이유는 8개 중 7개를 통과한 종목이
+  내일 조건을 채울 후보이기 때문이다 — `GateProgress`와 `shortfall_pct`가 Phase 0부터
+  계약에 있던 것이 이 정렬을 위해서였다.
+- `--top` / `--verdict`는 **표시 필터**다. 계약은 스캔한 전부를 담고, 화면에서 몇 개를
+  보여줄지만 고르며, 걸러낸 개수를 함께 출력한다.
 
 ### 파라미터는 학습 구간에서 고르고 홀드아웃으로 확인한다
 
@@ -403,7 +436,8 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `regime/market.py` | 시장 국면 판정 |
 | `risk/planner.py` | 손절 / 포지션 사이징 / R-multiple. 전략별 플랜 |
 | `strategies/registry.py` | 전략 이름 -> 팩토리. 전략 목록의 단일 출처 |
-| `main.py` | CLI + `diagnose()` — 진단 파이프라인의 유일한 오케스트레이션 지점 |
+| `main.py` | CLI + `diagnose()` / `scan()` — 파이프라인의 유일한 오케스트레이션 지점 |
+| `core/watchlist.py` | 진단 목록 -> `WatchlistReport` 조립 + 정렬 규약 |
 | `backtest/harness.py` | 과거 시점 재현 검증 러너 |
 | `backtest/sweep.py` | 파라미터 스윕 + 학습/홀드아웃 분할 |
 | `render/cli.py` | rich 렌더러 |
@@ -464,6 +498,14 @@ python -m pytest tests/ -q
 
 ```bash
 python main.py AAPL --equity 100000
+```
+
+```bash
+python main.py --scan us_large --top 20
+```
+
+```bash
+python scripts/verify_phase7.py
 ```
 
 ```bash

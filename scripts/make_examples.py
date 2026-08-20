@@ -46,6 +46,7 @@ from core.types import (  # noqa: E402
     StrategyVerdict,
     Verdict,
 )
+from core.watchlist import build_watchlist  # noqa: E402
 from data.universe import (  # noqa: E402
     rs_percentile_frame,
     rs_percentile_series,
@@ -53,7 +54,7 @@ from data.universe import (  # noqa: E402
     survivorship_warning,
 )
 from regime.market import regime_series, stage_series  # noqa: E402
-from render.json_out import to_json  # noqa: E402
+from render.json_out import to_json, watchlist_to_json  # noqa: E402
 from risk.planner import build_risk_plans  # noqa: E402
 from strategies.registry import ALL, build_strategies  # noqa: E402
 
@@ -218,13 +219,54 @@ def payload_for_date(market: dict, ticker: str, as_of: date, *, complete: bool) 
     return payload_at(market, ticker, int(positions[0]), complete=complete)
 
 
+def watchlist_payload(market: dict, as_of: date) -> str:
+    """같은 날짜에 패널 전 종목을 진단해 워치리스트로 조립한다.
+
+    `sample_buy.json`과 **같은 날짜**를 쓴다 — 워치리스트의 한 줄을 펼치면 그 진단
+    리포트가 나온다는 관계를 예시로 보여주기 위함이다.
+    """
+    reports = []
+    for ticker, df in sorted(market["frames"].items()):
+        positions = df.index.get_indexer([pd.Timestamp(as_of)])
+        if positions[0] < 0:
+            continue  # 그날 봉이 없는 종목은 스캔에서 빠진다 (거래정지 등)
+        ctx = context_at(
+            ticker,
+            df,
+            int(positions[0]),
+            regimes=market["regimes"],
+            stages=stage_series(df, DEFAULT_CONFIG.regime),
+            rs=rs_percentile_series(ticker, market["percentiles"]),
+        )
+        verdicts = evaluate(ctx)
+        reports.append(
+            build_report(
+                ctx,
+                verdicts,
+                generated_at=GENERATED_AT,
+                risk_plans=build_risk_plans(ctx, verdicts, EXAMPLE_RISK),
+            )
+        )
+
+    watchlist = build_watchlist(
+        UNIVERSE,
+        reports,
+        regime=reports[0].regime,
+        warnings=(survivorship_warning(UNIVERSE, market["universe_size"]),),
+        generated_at=GENERATED_AT,
+    )
+    return watchlist_to_json(watchlist) + "\n"
+
+
 def build_payloads() -> dict[str, str]:
-    """세 예시의 JSON 본문. 시나리오에 맞는 시점을 픽스처에서 찾아 생성한다."""
+    """예시 JSON 본문. 시나리오에 맞는 시점을 픽스처에서 찾아 생성한다."""
     market = load_market()
     (buy_ticker, buy_position), (reject_ticker, reject_position) = scan(
         market["frames"], market["regimes"], market["percentiles"]
     )
+    buy_as_of = market["frames"][buy_ticker].index[buy_position].date()
     return {
+        "sample_watchlist.json": watchlist_payload(market, buy_as_of),
         "sample_buy.json": payload_at(market, buy_ticker, buy_position, complete=True),
         "sample_gate_reject.json": payload_at(
             market, reject_ticker, reject_position, complete=True

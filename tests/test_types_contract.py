@@ -34,14 +34,18 @@ from core.types import (
     QullamaggieSetup,
     RiskPlan,
     RLevel,
+    ScanFailure,
     ScoreComponent,
     SessionState,
     SetupMetrics,
     Severity,
     Stage,
+    StrategySummary,
     StrategyVerdict,
     Verdict,
     WarningCode,
+    WatchlistEntry,
+    WatchlistReport,
     WeinsteinSetup,
 )
 
@@ -798,3 +802,107 @@ def test_strategy_vocabulary_stays_out_of_the_shared_core(model, field_name):
     assert field_name in model.model_fields
     assert field_name not in SetupMetrics.model_fields
     assert field_name not in IndicatorSnapshot.model_fields
+
+
+# ---------------------------------------------------------------------------
+# 워치리스트 — 두 번째 루트 계약
+# ---------------------------------------------------------------------------
+
+
+def make_summary(
+    name: str = "minervini",
+    verdict: Verdict = Verdict.BUY,
+    *,
+    passed: int = 8,
+    total: int = 8,
+    score_pct: float | None = 72.0,
+) -> StrategySummary:
+    return StrategySummary(
+        strategy_name=name,
+        verdict=verdict,
+        score_pct=score_pct,
+        gate_pass_count=passed,
+        gate_total=total,
+        progress_ratio=passed / total,
+    )
+
+
+def make_entry(ticker: str = "AAPL", summaries=None) -> WatchlistEntry:
+    summaries = [make_summary()] if summaries is None else summaries
+    buys = [s.strategy_name for s in summaries if s.verdict is Verdict.BUY]
+    return WatchlistEntry(
+        ticker=ticker,
+        price=182.4,
+        as_of=date(2026, 8, 18),
+        is_bar_complete=True,
+        strategies=summaries,
+        buy_strategies=buys,
+        agreement=Agreement.UNANIMOUS_BUY if len(buys) == len(summaries) else Agreement.NONE,
+        best_gate_progress=max(s.progress_ratio for s in summaries),
+    )
+
+
+def make_watchlist(entries=None, failed=None) -> WatchlistReport:
+    entries = [make_entry()] if entries is None else entries
+    failed = failed or []
+    return WatchlistReport(
+        universe="us_large",
+        generated_at=datetime(2026, 8, 18, 21, 0, tzinfo=UTC),
+        regime=MarketRegime.RISK_ON,
+        entries=entries,
+        failed=failed,
+        requested=len(entries) + len(failed),
+    )
+
+
+def test_watchlist_is_a_root_contract_with_a_schema_version():
+    from core.types import SCHEMA_VERSION
+
+    payload = json.loads(make_watchlist().model_dump_json())
+    assert payload["schema_version"] == SCHEMA_VERSION
+
+
+def test_summary_does_not_carry_diagnosis_detail():
+    """요약 계약이 존재하는 이유 자체다.
+
+    게이트 체크의 한글 reason, 점수 항목별 detail, 셋업 수치까지 실으면 100종목
+    스캔이 1MB를 넘는다. 그 필드들이 여기 생기기 시작하면 요약이 아니게 된다.
+    """
+    forbidden = {"checks", "components", "notes", "setup_metrics", "gate", "indicators"}
+    assert forbidden.isdisjoint(StrategySummary.model_fields)
+
+
+def test_scan_failure_keeps_the_reason():
+    """실패 목록에 티커만 남으면 사용자는 왜 빠졌는지 영원히 모른다."""
+    assert "reason" in ScanFailure.model_fields
+
+
+def test_requested_must_equal_entries_plus_failed():
+    with pytest.raises(ValidationError, match="requested"):
+        WatchlistReport(
+            universe="us_large",
+            generated_at=datetime(2026, 8, 18, 21, 0, tzinfo=UTC),
+            regime=MarketRegime.RISK_ON,
+            entries=[make_entry()],
+            requested=99,
+        )
+
+
+def test_rs_percentile_stays_in_range_on_entries():
+    """백분위는 0~100이다. 범위를 벗어난 값이 실리면 정렬과 필터가 조용히 이상해진다."""
+    with pytest.raises(ValidationError):
+        WatchlistEntry(
+            ticker="AAPL",
+            price=1.0,
+            as_of=date(2026, 8, 18),
+            is_bar_complete=True,
+            rs_percentile=140.0,
+        )
+
+
+def test_watchlist_serializes_through_the_json_module():
+    from render.json_out import watchlist_to_json
+
+    payload = json.loads(watchlist_to_json(make_watchlist()))
+    assert payload["entries"][0]["ticker"] == "AAPL"
+    assert payload["generated_at"].startswith("2026-08-18")

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from core.types import DiagnosisReport
+from core.types import DiagnosisReport, WatchlistReport
 
 
 def to_payload(report: DiagnosisReport) -> dict[str, Any]:
@@ -32,3 +32,22 @@ def to_json(report: DiagnosisReport, *, indent: int | None = 2) -> str:
 def json_schema() -> dict[str, Any]:
     """프론트엔드에 넘길 JSON Schema. 타입 생성기(quicktype 등)의 입력."""
     return DiagnosisReport.model_json_schema()
+
+
+def watchlist_to_payload(report: WatchlistReport) -> dict[str, Any]:
+    """워치리스트 직렬화 가능 dict. 진단 리포트와 같은 규약을 쓴다."""
+    return report.model_dump(mode="json")
+
+
+def watchlist_to_json(report: WatchlistReport, *, indent: int | None = 2) -> str:
+    """워치리스트 JSON 문자열.
+
+    별도 함수를 둔 이유는 루트 계약이 둘이기 때문이다 — 한 종목을 깊게 보는
+    DiagnosisReport와 여러 종목을 얕게 보는 WatchlistReport. 직렬화 규약(날짜 포맷,
+    enum 표현, ensure_ascii)은 둘이 같아야 하므로 이 모듈 안에 나란히 둔다.
+    """
+    return json.dumps(watchlist_to_payload(report), ensure_ascii=False, indent=indent)
+
+
+def watchlist_json_schema() -> dict[str, Any]:
+    return WatchlistReport.model_json_schema()

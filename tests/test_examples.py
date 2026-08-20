@@ -32,6 +32,7 @@ from core.types import (
     SessionState,
     Verdict,
     WarningCode,
+    WatchlistReport,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -419,3 +420,57 @@ def test_unavailable_checks_never_fabricate_a_derived_threshold():
             for check in verdict.gate.unavailable_checks:
                 assert check.actual is None
                 assert check.threshold != 0.0
+
+
+# ---------------------------------------------------------------------------
+# 워치리스트 예시 — 두 번째 루트 계약
+# ---------------------------------------------------------------------------
+
+WATCHLIST_FILE = "sample_watchlist.json"
+
+
+def load_watchlist() -> WatchlistReport:
+    return WatchlistReport.model_validate_json(
+        (EXAMPLES_DIR / WATCHLIST_FILE).read_text(encoding="utf-8")
+    )
+
+
+def test_watchlist_sample_is_contract_valid():
+    report = load_watchlist()
+    assert report.schema_version == SCHEMA_VERSION
+    assert report.requested == len(report.entries) + len(report.failed)
+    assert report.entries, "빈 워치리스트는 참조 문서가 되지 못한다"
+
+
+def test_watchlist_sample_is_sorted_as_the_contract_promises():
+    keys = [(len(e.buy_strategies), e.best_gate_progress) for e in load_watchlist().entries]
+    assert keys == sorted(keys, reverse=True)
+
+
+def test_watchlist_row_expands_into_the_buy_sample():
+    """워치리스트 한 줄을 펼치면 그 진단 리포트가 나온다는 관계.
+
+    두 예시가 같은 (티커, 날짜)를 가리키므로 프론트는 '목록 -> 상세' 이동을 이 두
+    파일만으로 만들 수 있다. 값이 어긋나면 목록과 상세가 갈라졌다는 뜻이다.
+    """
+    buy = load("sample_buy.json")
+    row = next(e for e in load_watchlist().entries if e.ticker == buy.ticker)
+
+    assert row.as_of == buy.as_of
+    assert row.price == buy.price
+    assert row.buy_strategies == buy.consensus.buy_strategies
+    assert [s.verdict for s in row.strategies] == [
+        v.verdict for v in buy.strategy_verdicts
+    ]
+
+
+def test_watchlist_sample_matches_the_current_implementation_output(market):
+    """드리프트 차단 — 진단 예시와 같은 규율을 워치리스트에도 건다."""
+    import make_examples
+
+    expected = make_examples.watchlist_payload(market, load("sample_buy.json").as_of)
+    actual = (EXAMPLES_DIR / WATCHLIST_FILE).read_text(encoding="utf-8")
+    assert actual == expected, (
+        f"{WATCHLIST_FILE}이 현재 구현의 출력과 다르다 — "
+        "python scripts/make_examples.py 로 재생성할 것"
+    )

@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.4.0"
+SCHEMA_VERSION = "1.5.0"
 
 # progress_ratio 대조 허용 오차 (DiagnosisReport validator에서 사용).
 # 목업/조립 코드가 소수 4자리로 반올림해도 통과하되 (2/3 -> 0.6667, 오차 3.3e-5),
@@ -761,3 +761,147 @@ class DiagnosisReport(Contract):
         ):
             raise ValueError("미완성 봉이면 INCOMPLETE_BAR 경고가 반드시 있어야 한다")
         return self
+
+
+# ---------------------------------------------------------------------------
+# 워치리스트 — 다종목 스캔 결과 (요약 계약)
+# ---------------------------------------------------------------------------
+
+
+class StrategySummary(Contract):
+    """워치리스트 한 행에 실리는 전략 하나의 요약.
+
+    `StrategyVerdict`를 그대로 나르지 않는 이유는 크기다. 게이트 체크의 한글 reason,
+    점수 항목별 detail, 셋업 수치까지 실으면 100종목 스캔이 1MB를 넘는다. 표 한 줄에
+    필요한 것만 담고, **상세는 그 티커를 개별 진단해서 본다**(같은 판정이 나온다 —
+    스캔과 단건 진단이 같은 경로를 쓴다).
+
+    `score_pct`는 절대 점수가 아니라 만점 대비 비율이다. 만점 척도가 전략마다 다르고
+    같은 전략도 시점마다 다르므로(채점 불가 항목을 만점에서 뺀다), 비율이 아니면
+    나란히 놓을 수 없다. 그래도 **전략 간 비교는 여전히 하지 말 것** — 같은 60%가
+    미너비니와 Qullamaggie에서 같은 뜻이 아니다.
+    """
+
+    strategy_name: str
+    verdict: Verdict
+    score_pct: Pct | None = Field(
+        default=None, description="score / max_score * 100. 게이트 탈락이면 None (0이 아니다)"
+    )
+    gate_pass_count: int = Field(ge=0)
+    gate_total: int = Field(ge=0)
+    gate_unavailable_count: int = Field(default=0, ge=0)
+    progress_ratio: Ratio = Field(description="gate_pass_count / gate_total")
+    setup_state: SetupState = SetupState.NO_SETUP
+    to_pivot_pct: Pct | None = Field(
+        default=None, description="피벗까지 남은 거리 %. 음수 = 이미 돌파"
+    )
+
+    @model_validator(mode="after")
+    def _mirrors_the_verdict(self) -> StrategySummary:
+        if self.gate_pass_count > self.gate_total:
+            raise ValueError("gate_pass_count가 gate_total보다 클 수 없다")
+        ratio = self.gate_pass_count / self.gate_total if self.gate_total else 0.0
+        if abs(self.progress_ratio - ratio) > PROGRESS_RATIO_TOLERANCE:
+            raise ValueError(
+                f"progress_ratio({self.progress_ratio})가 "
+                f"gate_pass_count/gate_total({ratio:.6f})과 불일치"
+            )
+        if self.verdict is Verdict.REJECTED_BY_GATE and self.score_pct is not None:
+            raise ValueError("게이트 탈락 종목은 채점하지 않는다 — score_pct는 None이어야 한다")
+        return self
+
+
+class WatchlistEntry(Contract):
+    """스캔 결과 한 종목. 전략별 요약을 나란히 들고 있다.
+
+    상단의 buy_strategies / agreement / best_gate_progress는 strategies에서 파생된
+    **중복 저장**이며 validator가 원본과의 일치를 강제한다 (ConsensusSummary와 같은 규율).
+    정렬과 필터가 이 값들을 쓰기 때문에, 값이 어긋나면 화면의 순서가 거짓이 된다.
+    """
+
+    ticker: str
+    price: Price
+    as_of: date
+    is_bar_complete: bool
+    stage: Stage = Stage.UNDEFINED
+    rs_percentile: float | None = Field(default=None, ge=0.0, le=100.0)
+    strategies: list[StrategySummary] = Field(default_factory=list)
+    buy_strategies: list[str] = Field(default_factory=list)
+    agreement: Agreement = Agreement.NONE
+    best_gate_progress: Ratio = Field(
+        default=0.0, description="전략 중 가장 높은 게이트 진행률. 워치리스트 정렬의 기본 키"
+    )
+
+    @model_validator(mode="after")
+    def _derived_fields_match(self) -> WatchlistEntry:
+        buys = [s.strategy_name for s in self.strategies if s.verdict is Verdict.BUY]
+        if self.buy_strategies != buys:
+            raise ValueError("buy_strategies가 strategies와 불일치")
+
+        total, n_buy = len(self.strategies), len(buys)
+        if n_buy == 0:
+            derived = Agreement.NONE
+        elif n_buy == total:
+            derived = Agreement.UNANIMOUS_BUY
+        elif n_buy * 2 > total:
+            derived = Agreement.MAJORITY_BUY
+        else:
+            derived = Agreement.SPLIT
+        if self.agreement is not derived:
+            raise ValueError(
+                f"agreement({self.agreement.value})가 판정 개수에서 파생된 "
+                f"값({derived.value})과 불일치"
+            )
+
+        best = max((s.progress_ratio for s in self.strategies), default=0.0)
+        if abs(self.best_gate_progress - best) > PROGRESS_RATIO_TOLERANCE:
+            raise ValueError("best_gate_progress가 strategies의 최대 진행률과 불일치")
+        return self
+
+
+class ScanFailure(Contract):
+    """진단하지 못한 종목. 조용히 사라지면 '116종목 스캔'이라는 말이 거짓이 된다."""
+
+    ticker: str
+    reason: str
+
+
+class WatchlistReport(Contract):
+    """다종목 스캔 전체. CLI와 프론트엔드가 공유하는 두 번째 루트 계약.
+
+    `DiagnosisReport`가 '한 종목을 깊게'라면 이쪽은 '여러 종목을 얕게'다. 두 계약은
+    같은 판정에서 나오며(스캔이 내부적으로 진단을 돌린다), 얕은 쪽에서 깊은 쪽으로
+    가는 길은 '그 티커를 다시 진단한다'이다.
+
+    entries는 **정렬된 상태로 실린다** (BUY 수 -> 게이트 진행률 내림차순). 정렬은
+    계약의 일부이므로 렌더러가 다시 정렬하지 않는다 — validator가 순서를 강제한다.
+    """
+
+    schema_version: str = SCHEMA_VERSION
+    universe: str
+    generated_at: datetime = Field(description="스캔 시각 (tz-aware UTC)")
+    regime: MarketRegime
+    entries: list[WatchlistEntry] = Field(default_factory=list)
+    failed: list[ScanFailure] = Field(default_factory=list)
+    requested: int = Field(ge=0, description="스캔을 시도한 종목 수 = entries + failed")
+    warnings: list[DiagnosticWarning] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _counts_and_order(self) -> WatchlistReport:
+        if self.requested != len(self.entries) + len(self.failed):
+            raise ValueError(
+                f"requested({self.requested})가 entries({len(self.entries)}) + "
+                f"failed({len(self.failed)})와 불일치"
+            )
+
+        keys = [(len(e.buy_strategies), e.best_gate_progress) for e in self.entries]
+        if keys != sorted(keys, reverse=True):
+            raise ValueError(
+                "entries는 (BUY 수, 게이트 진행률) 내림차순이어야 한다 — "
+                "정렬은 계약이고 렌더러가 다시 정렬하지 않는다"
+            )
+        return self
+
+    @property
+    def buy_entries(self) -> list[WatchlistEntry]:
+        return [e for e in self.entries if e.buy_strategies]

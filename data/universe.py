@@ -33,6 +33,7 @@ Phase 3.5에서 유니버스를 갖추면서 이 정의대로 계산한다.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -164,6 +165,7 @@ def load_universe_closes(
     *,
     use_cache: bool = True,
     now: datetime | None = None,
+    progress: Callable[[str, int, int], None] | None = None,
 ) -> UniverseCloses:
     """유니버스 구성종목의 종가 행렬을 확보한다. 캐시 -> (미스 시) 종목별 수집.
 
@@ -174,6 +176,10 @@ def load_universe_closes(
 
     수집 실패한 종목은 예외로 올리지 않고 missing에 모은다 — 티커 하나가 상장폐지됐다고
     진단 전체가 죽으면 안 되지만, 몇 개가 빠졌는지는 반드시 보여야 한다.
+
+    progress는 (라벨, 완료 수, 전체 수) 콜백이다. 첫 실행은 구성종목 수만큼 네트워크를
+    타므로 몇 분간 조용하고, 그때 사용자는 멈춘 줄 안다. 화면을 어떻게 그릴지는
+    호출부의 몫이므로 데이터 레이어는 콜백만 부른다 (여기서 rich를 import하지 않는다).
     """
     from data.fetcher import DataError, load_ohlcv, read_cache, write_cache
 
@@ -191,7 +197,9 @@ def load_universe_closes(
 
     columns: dict[str, pd.Series] = {}
     missing: list[str] = []
-    for ticker in tickers:
+    for index, ticker in enumerate(tickers, start=1):
+        if progress is not None:
+            progress(f"수집 {ticker}", index, len(tickers))
         try:
             bundle = load_ohlcv(ticker, data_config, exchanges, use_cache=use_cache, now=now)
         except DataError:

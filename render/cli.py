@@ -31,6 +31,8 @@ from core.types import (
     StrategyVerdict,
     Verdict,
     WarningCode,
+    WatchlistEntry,
+    WatchlistReport,
 )
 
 console = Console()
@@ -41,6 +43,15 @@ VERDICT_STYLE = {
     Verdict.HOLD: "cyan",
     Verdict.AVOID: "red",
     Verdict.REJECTED_BY_GATE: "dim",
+}
+
+# 표에서 쓰는 짧은 이름. 잘라 쓰면 REJECTED_BY_GATE가 'REJE'가 되어 읽히지 않는다.
+VERDICT_SHORT = {
+    Verdict.BUY: "BUY",
+    Verdict.WATCH: "WATCH",
+    Verdict.HOLD: "HOLD",
+    Verdict.AVOID: "AVOID",
+    Verdict.REJECTED_BY_GATE: "GATE",
 }
 
 # UNAVAILABLE은 FAIL과 **다른 색**이어야 한다. 같은 색으로 그리면 '데이터 없음'이
@@ -113,8 +124,12 @@ def render_header(report: DiagnosisReport) -> None:
     console.print(Panel(body, border_style="cyan", padding=(0, 2)))
 
 
-def render_warnings(report: DiagnosisReport) -> None:
-    """severity별 색상으로 경고 출력. INCOMPLETE_BAR는 상단에 고정."""
+def render_warnings(report: DiagnosisReport | WatchlistReport) -> None:
+    """severity별 색상으로 경고 출력. INCOMPLETE_BAR는 상단에 고정.
+
+    두 루트 계약이 같은 경고 목록을 들고 있으므로 한 함수가 둘 다 그린다 —
+    생존편향·유니버스 누락 경고는 단건 진단이든 스캔이든 같은 문장이어야 한다.
+    """
     if not report.warnings:
         return
 
@@ -281,4 +296,128 @@ def render_report(report: DiagnosisReport) -> None:
     console.print(
         "[dim]이 출력은 진단과 근거이지 매매 권유가 아니다. "
         "판정은 방법론별로 독립이며 서로 합산되지 않는다.[/dim]\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 워치리스트 (다종목 스캔)
+# ---------------------------------------------------------------------------
+
+
+def _cell(summary) -> str:
+    """전략 하나의 칸: 판정 + 게이트 진행 + 점수 비율.
+
+    점수는 만점 대비 비율로만 그린다 (척도가 전략마다 다르다). 게이트 탈락은
+    점수 자리를 비워 '채점 안 함'을 표시한다 — 0%로 그리면 낮은 점수로 읽힌다.
+    """
+    style = VERDICT_STYLE[summary.verdict]
+    score = "  —  " if summary.score_pct is None else f"{summary.score_pct:>4.0f}%"
+    unavailable = "!" if summary.gate_unavailable_count else " "
+    return (
+        f"[{style}]{VERDICT_SHORT[summary.verdict]:<5}[/{style}]"
+        f" {summary.gate_pass_count}/{summary.gate_total}{unavailable}{score}"
+    )
+
+
+def render_watchlist_table(
+    entries: list[WatchlistEntry], strategy_names: list[str]
+) -> None:
+    """종목 x 전략 표. 순서는 계약이 실어 보낸 그대로다 (여기서 다시 정렬하지 않는다)."""
+    table = Table(header_style="bold cyan", pad_edge=False)
+    table.add_column("티커")
+    table.add_column("가격", justify="right")
+    table.add_column("RS", justify="right")
+    table.add_column("Stage", justify="center")
+    for name in strategy_names:
+        table.add_column(name, justify="left")
+    table.add_column("피벗까지", justify="right")
+
+    for entry in entries:
+        by_name = {s.strategy_name: s for s in entry.strategies}
+        cells = [
+            _cell(by_name[name]) if name in by_name else "[dim]—[/dim]"
+            for name in strategy_names
+        ]
+        # 피벗까지 남은 거리는 '가장 가까운 전략' 기준이다. 전략마다 피벗 정의가
+        # 다르므로 하나로 합칠 수 없고, 목록에서는 가장 임박한 것을 보여준다.
+        distances = [
+            s.to_pivot_pct for s in entry.strategies if s.to_pivot_pct is not None
+        ]
+        nearest = min(distances, key=abs) if distances else None
+
+        table.add_row(
+            f"[bold]{entry.ticker}[/bold]" if entry.buy_strategies else entry.ticker,
+            f"{entry.price:,.2f}",
+            "n/a" if entry.rs_percentile is None else f"{entry.rs_percentile:.0f}",
+            entry.stage.value.replace("STAGE_", "S"),
+            *cells,
+            "n/a" if nearest is None else f"{nearest:+.1f}%",
+        )
+    console.print(table)
+
+
+def render_watchlist(
+    report: WatchlistReport,
+    *,
+    top: int | None = None,
+    verdicts: set[Verdict] | None = None,
+) -> None:
+    """스캔 결과 전체.
+
+    top / verdicts는 **표시 필터**다. 계약(report.entries)은 스캔한 전부를 담고 있고,
+    화면에서 몇 개를 보여줄지만 고른다 — 걸러낸 개수를 항상 함께 출력해서 '전부를 본
+    것'으로 오해하지 않게 한다.
+    """
+    console.print()
+    console.print(
+        Panel(
+            f"[bold]{report.universe}[/bold] 유니버스 {report.requested}종목 스캔  ·  "
+            f"시장 국면 [bold]{report.regime.value}[/bold]\n"
+            f"생성 {report.generated_at:%Y-%m-%d %H:%M UTC}  ·  "
+            f"진단 성공 {len(report.entries)}  ·  실패 {len(report.failed)}",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    render_warnings(report)
+
+    entries = report.entries
+    if verdicts is not None:
+        entries = [
+            e for e in entries if any(s.verdict in verdicts for s in e.strategies)
+        ]
+    shown = entries if top is None else entries[:top]
+
+    strategy_names: list[str] = []
+    for entry in report.entries:
+        for summary in entry.strategies:
+            if summary.strategy_name not in strategy_names:
+                strategy_names.append(summary.strategy_name)
+
+    if not shown:
+        console.print("  [yellow]조건에 맞는 종목이 없다[/yellow]\n")
+    else:
+        console.print()
+        render_watchlist_table(shown, strategy_names)
+        console.print(
+            f"  [dim]{len(shown)}종목 표시 / 필터 통과 {len(entries)} / 스캔 "
+            f"{report.requested}. 칸은 '판정 게이트통과/전체 점수비율'이고 "
+            f"!는 데이터 없는 조건이 있다는 뜻이다.[/dim]"
+        )
+
+    buys = report.buy_entries
+    console.print(
+        f"\n  [bold]BUY를 낸 전략이 있는 종목 {len(buys)}개[/bold]"
+        + (f": {', '.join(e.ticker for e in buys[:12])}" if buys else "")
+    )
+    if report.failed:
+        console.print(
+            f"  [yellow]진단 실패 {len(report.failed)}종목[/yellow]: "
+            + ", ".join(f.ticker for f in report.failed[:8])
+        )
+    console.print(
+        "  [dim]정렬은 (BUY 전략 수, 게이트 진행률) 순이다. 게이트에 근접한 종목이 "
+        "위에 오는 이유는 내일 조건을 채울 후보이기 때문이다.\n"
+        "  전략 점수는 척도가 서로 달라 나란히 비교하거나 평균낼 수 없다. "
+        "상세는 해당 티커를 개별 진단할 것.[/dim]\n"
     )
