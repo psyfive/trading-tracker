@@ -99,9 +99,48 @@ def test_every_sample_carries_the_survivorship_warning(name):
 
 
 @pytest.mark.parametrize("name", SAMPLE_FILES)
-def test_risk_plan_is_absent_until_the_planner_exists(name):
-    """risk/planner.py가 없다. 계산 주체 없는 값을 예시가 지어내면 그것이 곧 거짓 문서다."""
-    assert load(name).risk_plan is None
+def test_risk_plans_only_ride_on_actionable_verdicts(name):
+    """플랜은 진입 의사가 있는 판정(BUY/WATCH)에만 붙는다.
+
+    AVOID나 게이트 탈락에 진입가·주수가 실리면 '사지 않기로 한 방법론'이 매수 계획을
+    내놓는 화면이 된다.
+    """
+    report = load(name)
+    actionable = {
+        v.strategy_name
+        for v in report.strategy_verdicts
+        if v.verdict in (Verdict.BUY, Verdict.WATCH)
+    }
+    assert set(report.risk_plans) <= actionable
+
+
+def test_buy_sample_carries_a_sized_risk_plan():
+    """참조 문서로 쓰이므로 주수까지 채워진 형태가 하나는 있어야 한다."""
+    report = load("sample_buy.json")
+    plan = report.risk_plans[report.consensus.buy_strategies[0]]
+    assert plan.stop < plan.entry
+    assert plan.shares is not None and plan.shares > 0
+    assert plan.account_equity is not None
+    assert [level.multiple for level in plan.r_levels] == sorted(
+        level.multiple for level in plan.r_levels
+    )
+
+
+def test_risk_plans_differ_when_pivots_differ():
+    """전략마다 피벗이 다르면 진입가·손절가도 달라야 한다.
+
+    하나로 합치면 '어느 방법론을 따를 것인가'라는 선택을 조립 코드가 대신 하게 된다.
+    """
+    report = load("sample_buy.json")
+    pivots = {
+        v.strategy_name: v.setup_metrics.pivot_price
+        for v in report.strategy_verdicts
+        if v.strategy_name in report.risk_plans
+    }
+    for name_a, pivot_a in pivots.items():
+        for name_b, pivot_b in pivots.items():
+            if pivot_a != pivot_b:
+                assert report.risk_plans[name_a].entry != report.risk_plans[name_b].entry
 
 
 # ---------------------------------------------------------------------------

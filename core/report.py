@@ -11,11 +11,11 @@ DiagnosisReport validator가 죽는다. 그 파생 규칙(집계·일치·agreem
 이 모듈은 이미 내려진 판정을 세고 옮긴다. 유일한 예외처럼 보이는 경고 두 개
 (INCOMPLETE_BAR / REGIME_RISK_OFF)도 판정이 아니라 **이미 확정된 상태의 기계적 반영**이다.
 
-## risk_plan은 아직 None이다
+## risk_plans는 계산하지 않고 받아서 싣는다
 
-`risk/planner.py`가 구현되지 않았다. 계산 주체가 없는 값을 조립 코드가 지어내면
-그것이 곧 '판정 로직 누수'이므로, 구현되기 전까지는 호출부가 넘긴 값을 그대로 싣고
-기본값은 None이다.
+계산 주체는 `risk/planner.py`(계좌 레이어)다. 조립 코드가 진입가·손절가를 지어내면
+그것이 곧 판정 로직 누수이므로, 여기서는 호출부가 넘긴 것을 그대로 옮긴다.
+어느 판정에 플랜이 붙을 수 있는지(BUY/WATCH)는 DiagnosisReport validator가 강제한다.
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ def build_report(
     verdicts: list[StrategyVerdict],
     *,
     generated_at: datetime | None = None,
-    risk_plan: RiskPlan | None = None,
+    risk_plans: dict[str, RiskPlan] | None = None,
     warnings: tuple[DiagnosticWarning, ...] = (),
 ) -> DiagnosisReport:
     """컨텍스트 + 판정들 -> 리포트. CLI·API·목업 생성기가 공유하는 유일한 조립 경로다."""
@@ -137,6 +137,6 @@ def build_report(
         indicators=ctx.indicators,
         strategy_verdicts=verdicts,
         consensus=build_consensus(verdicts),
-        risk_plan=risk_plan,
+        risk_plans=risk_plans or {},
         warnings=[*ctx.warnings, *warnings, *derived],
     )

@@ -47,9 +47,7 @@ from data.universe import (  # noqa: E402
     survivorship_warning,
 )
 from regime.market import regime_series, stage_series  # noqa: E402
-from strategies.minervini import MinerviniStrategy  # noqa: E402
-from strategies.qullamaggie import QullamaggieStrategy  # noqa: E402
-from strategies.weinstein import WeinsteinStrategy  # noqa: E402
+from strategies.registry import STRATEGY_FACTORIES  # noqa: E402
 
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 # 폭을 고정하는 이유: 좁은 터미널에서 rich가 열을 잘라 숫자가 통째로 사라진다.
@@ -60,15 +58,17 @@ MARKETS = {
     "kospi": {"universe": "kospi", "benchmark": "^KS11", "panel": "panel_kospi_ohlcv"},
 }
 
-STRATEGIES = ("minervini", "weinstein", "qullamaggie")
+STRATEGIES = tuple(STRATEGY_FACTORIES)
 
 
 def make_strategies(cfg):
-    """전략 팩토리. 코어는 전략 목록을 모르지만 검증 스크립트는 알아야 한다."""
+    """전략명 -> 무인자 팩토리. 목록은 `strategies/registry.py` 한 곳에만 있다.
+
+    하네스가 종목마다 새 인스턴스를 요구하므로(상태 누수 방지) config를 미리 묶어 둔다.
+    """
     return {
-        "minervini": lambda: MinerviniStrategy(cfg.minervini),
-        "weinstein": lambda: WeinsteinStrategy(cfg.weinstein),
-        "qullamaggie": lambda: QullamaggieStrategy(cfg.qullamaggie),
+        name: (lambda factory=factory: factory(cfg))
+        for name, factory in STRATEGY_FACTORIES.items()
     }
 
 

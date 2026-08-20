@@ -42,7 +42,10 @@ Phase 0~3의 손 목업은 두 Phase 연속으로 구현을 따라가지 못했�
 - `setup_metrics.detail`은 `kind`로 분기한다. 모르는 `kind`는 무시하면 된다.
   같은 차트에서 세 전략의 `base_length_days`가 서로 다르다는 점을 확인할 것 —
   피벗·베이스는 지표가 아니라 **방법론별 해석**이다.
-- `risk_plan`은 아직 항상 `null`이다. `risk/planner.py`가 구현되지 않았고, 계산 주체가
-  없는 값을 예시가 지어내지 않는다.
+- `risk_plans`는 **전략명을 키로 하는 맵**이다. 세 전략의 피벗이 다르면 진입가·손절가도
+  다르므로 플랜도 전략마다 따로 나온다. 진입 의사가 있는 판정(BUY/WATCH)에만 실리므로
+  키가 `strategy_verdicts`보다 적을 수 있고, 하나도 없으면 빈 객체다.
+  예시는 계좌 10만을 가정해 주수까지 채웠다 — 계좌를 모르면 `shares`/`position_value`/
+  `risk_amount`가 전부 `null`이고, 그때 0으로 그리면 안 된다.
 - `warnings`의 `RS_UNIVERSE_MISSING`(생존편향)은 RS 백분위를 실은 모든 리포트에 붙는다.
   숫자 옆에 함께 표시할 것.

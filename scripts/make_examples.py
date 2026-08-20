@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -53,9 +54,8 @@ from data.universe import (  # noqa: E402
 )
 from regime.market import regime_series, stage_series  # noqa: E402
 from render.json_out import to_json  # noqa: E402
-from strategies.minervini import MinerviniStrategy  # noqa: E402
-from strategies.qullamaggie import QullamaggieStrategy  # noqa: E402
-from strategies.weinstein import WeinsteinStrategy  # noqa: E402
+from risk.planner import build_risk_plans  # noqa: E402
+from strategies.registry import ALL, build_strategies  # noqa: E402
 
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 EXAMPLES_DIR = ROOT / "examples"
@@ -65,18 +65,19 @@ UNIVERSE = "us_large"
 # 달라졌는지'를 볼 수 없다.
 GENERATED_AT = datetime(2026, 8, 19, 21, 0, tzinfo=UTC)
 
+# 예시의 리스크 플랜을 '주수까지 채워진' 모습으로 보여주기 위한 계좌 규모다.
+# DEFAULT_CONFIG는 account_equity가 None이라 shares/position_value가 전부 null이 되는데,
+# 프론트 참조 문서로는 채워진 형태가 필요하다 (None 경로는 유닛 테스트가 잠근다).
+EXAMPLE_RISK = replace(DEFAULT_CONFIG.risk, account_equity=100_000.0)
+
 # 지표 워밍업(252봉 52주 + 기울기)이 끝난 뒤부터 훑는다.
 SCAN_START = 300
 SCAN_STEP = 2
 
 
 def make_strategies():
-    cfg = DEFAULT_CONFIG
-    return [
-        MinerviniStrategy(cfg.minervini),
-        WeinsteinStrategy(cfg.weinstein),
-        QullamaggieStrategy(cfg.qullamaggie),
-    ]
+    """등록된 전략 전부. 목록은 `strategies/registry.py` 한 곳에만 있다."""
+    return build_strategies(ALL, DEFAULT_CONFIG)
 
 
 def load_panel() -> dict[str, pd.DataFrame]:
@@ -194,10 +195,12 @@ def payload_at(market: dict, ticker: str, position: int, *, complete: bool) -> s
         rs=rs_percentile_series(ticker, market["percentiles"]),
         complete=complete,
     )
+    verdicts = evaluate(ctx)
     report = build_report(
         ctx,
-        evaluate(ctx),
+        verdicts,
         generated_at=GENERATED_AT,
+        risk_plans=build_risk_plans(ctx, verdicts, EXAMPLE_RISK),
         warnings=(survivorship_warning(UNIVERSE, market["universe_size"]),),
     )
     return to_json(report) + "\n"

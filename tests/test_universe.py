@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 from config import DEFAULT_CONFIG
+from core.types import WarningCode
 from data.universe import (
     load_universe_tickers,
     rs_line_new_high_series,
@@ -302,3 +303,132 @@ def test_benchmark_selection_by_exchange():
     assert benchmark_for("AAPL", regime, "US") == "SPY"
     assert benchmark_for("005930.KS", regime, "KRX") == "^KS11"
     assert benchmark_for("7203.T", regime, None) == regime.default_benchmark
+
+
+# ===========================================================================
+# 종가 수집 — 진단 파이프라인의 선행 조건
+# ===========================================================================
+
+
+def tiny_frame(base: float) -> pd.DataFrame:
+    index = pd.bdate_range("2026-01-01", periods=10)
+    closes = [base + i for i in range(len(index))]
+    return pd.DataFrame(
+        {
+            "open": closes,
+            "high": closes,
+            "low": closes,
+            "close": closes,
+            "volume": [1_000.0] * len(index),
+        },
+        index=index,
+    )
+
+
+@pytest.fixture
+def fake_market(monkeypatch, tmp_path):
+    """유니버스 3종목 + 종목별 수집을 가짜로. 네트워크도 실제 캐시도 건드리지 않는다."""
+    from dataclasses import replace as dc_replace
+
+    from core.types import BarMeta, SessionState
+    from data import universe as universe_module
+    from data.fetcher import InvalidTickerError, OhlcvBundle
+
+    state = {"tickers": ["AAA", "BBB", "CCC"], "broken": set(), "calls": []}
+
+    def fake_tickers(name):
+        return list(state["tickers"])
+
+    def fake_load_ohlcv(ticker, config, exchanges, *, use_cache=True, now=None):
+        state["calls"].append(ticker)
+        if ticker in state["broken"]:
+            raise InvalidTickerError(f"{ticker}: 테스트 실패 시나리오")
+        df = tiny_frame(100.0 + len(ticker))
+        return OhlcvBundle(
+            ticker=ticker,
+            ohlcv=df,
+            bar_meta=BarMeta(
+                last_bar_date=df.index[-1].date(),
+                session_state=SessionState.CLOSED,
+                is_bar_complete=True,
+                bars_available=len(df),
+                volume_judgements_reliable=True,
+            ),
+            warnings=(),
+            from_cache=False,
+        )
+
+    monkeypatch.setattr(universe_module, "load_universe_tickers", fake_tickers)
+    monkeypatch.setattr("data.fetcher.load_ohlcv", fake_load_ohlcv)
+
+    state["config"] = dc_replace(DEFAULT_CONFIG.data, cache_dir=str(tmp_path))
+    state["exchanges"] = DEFAULT_CONFIG.exchanges
+    return state
+
+
+def test_universe_closes_are_collected_per_ticker(fake_market):
+    from data.universe import load_universe_closes
+
+    result = load_universe_closes(
+        "test", fake_market["config"], fake_market["exchanges"], use_cache=False
+    )
+    assert list(result.closes.columns) == ["AAA", "BBB", "CCC"]
+    assert result.size == 3
+    assert result.missing == ()
+
+
+def test_a_dead_ticker_does_not_kill_the_universe(fake_market):
+    """상장폐지 하나로 진단 전체가 죽으면 안 된다. 다만 빠진 사실은 남아야 한다."""
+    from data.universe import load_universe_closes
+
+    fake_market["broken"] = {"BBB"}
+    result = load_universe_closes(
+        "test", fake_market["config"], fake_market["exchanges"], use_cache=False
+    )
+    assert result.missing == ("BBB",)
+    assert result.size == 2
+
+
+def test_missing_members_warning_states_the_reduced_denominator(fake_market):
+    from data.universe import missing_members_warning
+
+    warning = missing_members_warning("test", ("BBB",), 2)
+    assert "분모가 줄어든" in warning.message
+    assert warning.code is WarningCode.RS_UNIVERSE_MISSING
+
+
+def test_total_failure_is_loud(fake_market):
+    """전부 실패했는데 빈 행렬을 돌려주면 '모든 전략 탈락' 화면만 남는다."""
+    from data.universe import UniverseDataError, load_universe_closes
+
+    fake_market["broken"] = {"AAA", "BBB", "CCC"}
+    with pytest.raises(UniverseDataError):
+        load_universe_closes(
+            "test", fake_market["config"], fake_market["exchanges"], use_cache=False
+        )
+
+
+def test_second_call_hits_the_cache_instead_of_refetching(fake_market):
+    """티커 수만큼 네트워크를 타는 경로이므로 캐시가 실제로 먹혀야 한다."""
+    from data.universe import load_universe_closes
+
+    first = load_universe_closes("test", fake_market["config"], fake_market["exchanges"])
+    calls_after_first = len(fake_market["calls"])
+    second = load_universe_closes("test", fake_market["config"], fake_market["exchanges"])
+
+    assert first.from_cache is False
+    assert second.from_cache is True
+    assert len(fake_market["calls"]) == calls_after_first
+    assert list(second.closes.columns) == list(first.closes.columns)
+
+
+def test_percentiles_can_be_computed_from_collected_closes(fake_market):
+    """수집 결과가 RS 계산의 입력 형태(날짜 x 티커)와 실제로 맞물리는지."""
+    from data.universe import load_universe_closes
+
+    result = load_universe_closes(
+        "test", fake_market["config"], fake_market["exchanges"], use_cache=False
+    )
+    scores = rs_score_frame(result.closes, UNIVERSE)
+    assert list(scores.columns) == list(result.closes.columns)
+    assert scores.index.equals(result.closes.index)

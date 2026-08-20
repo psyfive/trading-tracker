@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3.0",
+  "schema_version": "1.4.0",
   "ticker": "TXN",
   "as_of": "2026-05-22",
   "generated_at": "2026-08-19T21:00:00Z",
@@ -498,7 +498,107 @@
     ],
     "agreement": "UNANIMOUS_BUY"
   },
-  "risk_plan": null,
+  "risk_plans": {
+    "minervini": {
+      "entry": 308.7094,
+      "stop": 288.1577,
+      "stop_pct": 6.6573,
+      "r_per_share": 20.5517,
+      "shares": 48,
+      "position_value": 14818.0512,
+      "account_equity": 100000.0,
+      "risk_pct": 0.9865,
+      "risk_amount": 986.4805,
+      "r_levels": [
+        {
+          "multiple": 1.0,
+          "price": 329.2611,
+          "suggested_action": "손절을 진입가(본전)로 올린다"
+        },
+        {
+          "multiple": 2.0,
+          "price": 349.8128,
+          "suggested_action": "포지션 일부를 정리해 남은 리스크를 줄인다"
+        },
+        {
+          "multiple": 3.0,
+          "price": 370.3644,
+          "suggested_action": "추격 손절로 전환한다"
+        }
+      ],
+      "exit_rules": [
+        "손절 288.16 이탈 시 청산 — 1R = 20.55 (6.7%)",
+        "손절은 위로만 옮긴다. 아래로 내리는 것은 계획 변경이 아니라 계획 폐기다",
+        "피벗 308.71을 넘지 못하면 진입 자체가 없다 — 현재가 307.63"
+      ]
+    },
+    "weinstein": {
+      "entry": 308.7094,
+      "stop": 288.1577,
+      "stop_pct": 6.6573,
+      "r_per_share": 20.5517,
+      "shares": 48,
+      "position_value": 14818.0512,
+      "account_equity": 100000.0,
+      "risk_pct": 0.9865,
+      "risk_amount": 986.4805,
+      "r_levels": [
+        {
+          "multiple": 1.0,
+          "price": 329.2611,
+          "suggested_action": "손절을 진입가(본전)로 올린다"
+        },
+        {
+          "multiple": 2.0,
+          "price": 349.8128,
+          "suggested_action": "포지션 일부를 정리해 남은 리스크를 줄인다"
+        },
+        {
+          "multiple": 3.0,
+          "price": 370.3644,
+          "suggested_action": "추격 손절로 전환한다"
+        }
+      ],
+      "exit_rules": [
+        "손절 288.16 이탈 시 청산 — 1R = 20.55 (6.7%)",
+        "손절은 위로만 옮긴다. 아래로 내리는 것은 계획 변경이 아니라 계획 폐기다",
+        "피벗 308.71을 넘지 못하면 진입 자체가 없다 — 현재가 307.63"
+      ]
+    },
+    "qullamaggie": {
+      "entry": 308.7094,
+      "stop": 288.1577,
+      "stop_pct": 6.6573,
+      "r_per_share": 20.5517,
+      "shares": 48,
+      "position_value": 14818.0512,
+      "account_equity": 100000.0,
+      "risk_pct": 0.9865,
+      "risk_amount": 986.4805,
+      "r_levels": [
+        {
+          "multiple": 1.0,
+          "price": 329.2611,
+          "suggested_action": "손절을 진입가(본전)로 올린다"
+        },
+        {
+          "multiple": 2.0,
+          "price": 349.8128,
+          "suggested_action": "포지션 일부를 정리해 남은 리스크를 줄인다"
+        },
+        {
+          "multiple": 3.0,
+          "price": 370.3644,
+          "suggested_action": "추격 손절로 전환한다"
+        }
+      ],
+      "exit_rules": [
+        "손절 288.16 이탈 시 청산 — 1R = 20.55 (6.7%)",
+        "손절은 위로만 옮긴다. 아래로 내리는 것은 계획 변경이 아니라 계획 폐기다",
+        "피벗 308.71을 넘지 못하면 진입 자체가 없다 — 현재가 307.63"
+      ]
+    }
+  },
   "warnings": [
     {
       "code": "RS_UNIVERSE_MISSING",

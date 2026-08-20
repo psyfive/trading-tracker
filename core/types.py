@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.4.0"
 
 # progress_ratio 대조 허용 오차 (DiagnosisReport validator에서 사용).
 # 목업/조립 코드가 소수 4자리로 반올림해도 통과하되 (2/3 -> 0.6667, 오차 3.3e-5),
@@ -160,6 +160,7 @@ class WarningCode(StrEnum):
     EARNINGS_NEAR = "EARNINGS_NEAR"                # 실적 발표 임박
     RS_UNIVERSE_MISSING = "RS_UNIVERSE_MISSING"    # 유니버스 미구축 — RS 백분위 신뢰 불가
     REGIME_RISK_OFF = "REGIME_RISK_OFF"            # 시장 국면 역풍
+    BENCHMARK_UNAVAILABLE = "BENCHMARK_UNAVAILABLE"  # 벤치마크 지수 수집 실패 — 국면 근거 없음
     SPLIT_OR_GAP_SUSPECT = "SPLIT_OR_GAP_SUSPECT"  # 액면분할 / 데이터 이상 의심
     STRATEGY_ERROR = "STRATEGY_ERROR"              # 전략 평가 중 예외 — 해당 전략만 실패
 
@@ -665,7 +666,14 @@ class DiagnosisReport(Contract):
     indicators: IndicatorSnapshot
     strategy_verdicts: list[StrategyVerdict] = Field(default_factory=list)
     consensus: ConsensusSummary
-    risk_plan: RiskPlan | None = Field(default=None, description="BUY/WATCH가 하나도 없으면 None")
+    risk_plans: dict[str, RiskPlan] = Field(
+        default_factory=dict,
+        description=(
+            "전략명 -> 리스크 플랜. 진입 의사가 있는 판정(BUY/WATCH)에만 실린다. "
+            "전략마다 피벗과 손절 자리가 다르므로 플랜도 전략마다 다르다 — "
+            "하나로 합치면 '어느 방법론을 따를 것인가'라는 판단을 조립 코드가 하게 된다."
+        ),
+    )
     warnings: list[DiagnosticWarning] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -732,6 +740,20 @@ class DiagnosisReport(Contract):
             raise ValueError(
                 f"consensus.agreement({consensus.agreement.value})가 판정 개수에서 파생된 "
                 f"값({derived.value})과 불일치"
+            )
+
+        # risk_plans: 존재하지 않는 전략의 플랜이나, 사지도 않을 판정의 플랜이 실리면 안 된다.
+        # 계좌 레이어가 계산하는 값이지만 '어느 판정에 붙는가'는 판정 쪽이 정한다.
+        actionable = {
+            v.strategy_name for v in verdicts if v.verdict in (Verdict.BUY, Verdict.WATCH)
+        }
+        unknown = set(self.risk_plans) - {v.strategy_name for v in verdicts}
+        if unknown:
+            raise ValueError(f"risk_plans에 없는 전략이 있다: {sorted(unknown)}")
+        not_actionable = set(self.risk_plans) - actionable
+        if not_actionable:
+            raise ValueError(
+                f"진입 의사가 없는 판정에 리스크 플랜이 실렸다: {sorted(not_actionable)}"
             )
 
         if not self.is_bar_complete and not any(

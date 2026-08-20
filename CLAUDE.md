@@ -5,9 +5,10 @@
 
 매매를 자동 실행하지 않는다. 진단과 근거 제시까지가 범위다.
 
-## 현재 상태 (Phase 4 + 리뷰 반영 완료)
+## 현재 상태 (Phase 5 완료)
 
-계약(v1.3.0) + 데이터 + 지표 + 하네스 + **전략 3종** + 유니버스 RS까지 구현됐다.
+계약(v1.4.0) + 데이터 + 지표 + 하네스 + 전략 3종 + 유니버스 RS + **진단 파이프라인**까지
+구현됐다. `python main.py AAPL`이 실제로 동작한다.
 
 - **Phase 0 (계약)**: `core/types.py`, `config.py`, `examples/`
 - **Phase 1 (데이터·지표)**: `indicators/core.py`, `indicators/snapshot.py`,
@@ -23,9 +24,53 @@
   베이스 깊이 상한 적용, 스키마 1.3.0(`breakout_volume_ratio`를 미너비니·Qullamaggie
   detail에 추가), RS 백분위 규약 통일, `core/report.py`(리포트 조립),
   `scripts/make_examples.py`(예시 자동 생성)
-- **미구현**: CANSLIM(재무 데이터 필요), `risk/planner.py`, `render/cli.py`의 렌더링,
-  `main.py`의 진단 파이프라인
-- `main.py`는 인자 파싱까지만 동작한다 (`--help` 정상, 실제 진단은 exit 2)
+- **Phase 5 (파이프라인)**: `main.diagnose()`(유일한 오케스트레이션 지점),
+  `risk/planner.py`, `render/cli.py`, `strategies/registry.py`,
+  `data/universe.py`의 종가 수집, 스키마 1.4.0(`risk_plans`)
+- **미구현**: CANSLIM(재무 데이터 필요), `backtest.sweep`(파라미터 스윕),
+  워치리스트/다종목 스크리닝 계약
+
+### 진단 한 건은 `main.diagnose()`로만 흐른다
+
+수집 -> 지표 -> 국면/Stage -> RS -> 전략별 평가 -> 리스크 플랜 -> 리포트.
+CLI와 향후 웹 API가 이 함수 하나를 공유한다. 여기서 임계값을 비교하지 않는다 —
+재료를 모아 전략에 넘기고 결과를 조립할 뿐이다.
+
+**RS 유니버스는 파이프라인의 선행 조건이다.** 세 전략 모두 게이트에 RS 조건이 있고,
+RS가 None이면 UNAVAILABLE이며, UNAVAILABLE은 AND 게이트를 막는다. 즉
+`load_universe_closes()`가 유니버스 **전체**의 종가를 확보하지 못하면 어떤 종목을
+진단해도 전부 REJECTED_BY_GATE가 나온다. 그 화면은 '이 종목이 나쁘다'와 구분되지
+않으므로 실패 시 CRITICAL 경고로 이유를 남긴다 (`scripts/verify_phase5.py`가 이
+시나리오를 재현해 확인한다). 첫 실행은 구성종목 수만큼 네트워크를 타고, 이후에는
+하루 단위 캐시를 읽는다.
+
+**전략 하나가 터져도 나머지는 낸다.** `WarningCode.STRATEGY_ERROR`의 계약상 의미가
+'해당 전략만 실패'이므로, 예외를 낸 전략은 판정 목록에서 빠지고 경고로 남는다.
+빠진 전략을 REJECTED_BY_GATE로 채우면 '그 방법론이 거절했다'는 거짓이 된다
+(컨센서스 분모도 그만큼 줄어든다).
+
+### 리스크 플랜은 전략마다 따로다
+
+`risk_plans: dict[전략명, RiskPlan]`이다. 세 전략의 피벗이 다르므로 진입가가 다르고,
+진입가가 다르면 손절가·주수·목표가가 전부 달라진다. 하나로 합치려면 '어느 방법론을
+따를 것인가'를 골라야 하는데 그 선택은 사용자의 몫이지 조립 코드의 몫이 아니다.
+
+- 플랜은 **진입 의사가 있는 판정(BUY/WATCH)에만** 붙는다. `DiagnosisReport` validator가
+  강제한다 — AVOID나 게이트 탈락에 매수 계획이 실리면 안 된다.
+- 진입가는 **피벗이 아직 위면 피벗, 이미 넘었으면 현재가**다. 돌파 전인데 현재가로
+  계산하면 손절폭이 실제보다 넓게 나온다.
+- 손절은 ATR 배수와 `max_stop_pct` 중 **타이트한 쪽**이다. 방법론별 손절 규칙
+  (베이스 저점 아래 등)은 아직 없다 — 넣으려면 전략이 손절 후보를 `SetupMetrics`에
+  싣는 계약 변경이 먼저다.
+- `risk_amount`는 예산이 아니라 **체결 기준 실제 손실액**이다. 포지션 상한에 걸려
+  주수가 깎이면 실제 리스크도 줄어드는데, 예산을 그대로 실으면 화면의 숫자가 거짓이 된다.
+
+### 전략 목록은 `strategies/registry.py` 하나다
+
+`main.py`가 전략 이름을 알면 전략 추가가 코어 수정을 요구하게 된다(원칙 2 위반).
+백테스트 스크립트·목업 생성기도 이 레지스트리를 쓴다 — 호출부마다 목록을 들고 있으면
+'어떤 전략이 도는가'가 곳마다 달라진다. `strategies/dummy.py`의 더미 3종은 등록하지
+않는다 (하네스 검증용이지 매매 판단용이 아니다).
 
 ### 전략마다 게이트의 축이 다르다
 
@@ -296,7 +341,8 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
   (예: `PositionState`는 enum만 정의되어 있고 이를 참조하는 필드는 없다.)
 - **아직 채워지지 않는 필드에는 그 사실을 주석으로 못 박는다.** `rs_line_new_high`는
   산출 함수는 있지만 호출부가 없어 항상 None이며, CANSLIM Phase에서 연결한다.
-  `risk_plan`도 planner 구현 전까지 항상 None이다. '언젠가 채워지겠지'로 두면
+  `risk_plans`는 Phase 5에서 채워지기 시작했으나, 진입 의사가 있는 판정이 없으면
+  빈 dict다 (없는 것과 '아직 구현 안 된 것'은 다르다). '언젠가 채워지겠지'로 두면
   프론트가 값이 오는 줄 알고 UI를 만든다.
 
 ## `is_bar_complete` 규칙
@@ -326,7 +372,9 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `strategies/base.py` | `Strategy` Protocol + `StrategyBase` 템플릿 |
 | `strategies/*.py` | 전략별 GATE/SCORE 구현 |
 | `regime/market.py` | 시장 국면 판정 |
-| `risk/planner.py` | 손절 / 포지션 사이징 / R-multiple |
+| `risk/planner.py` | 손절 / 포지션 사이징 / R-multiple. 전략별 플랜 |
+| `strategies/registry.py` | 전략 이름 -> 팩토리. 전략 목록의 단일 출처 |
+| `main.py` | CLI + `diagnose()` — 진단 파이프라인의 유일한 오케스트레이션 지점 |
 | `backtest/harness.py` | 과거 시점 재현 검증 러너 |
 | `render/cli.py` | rich 렌더러 |
 | `render/json_out.py` | 프론트엔드용 직렬화 (유일한 진입점) |
@@ -379,6 +427,14 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 
 ```bash
 python -m pytest tests/ -q
+```
+
+```bash
+python main.py AAPL --equity 100000
+```
+
+```bash
+python scripts/verify_phase5.py
 ```
 
 ```bash

@@ -33,15 +33,24 @@ Phase 3.5에서 유니버스를 갖추면서 이 정의대로 계산한다.
 
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
 
-from config import RegimeConfig, UniverseConfig
+from config import DataConfig, ExchangeConfig, RegimeConfig, UniverseConfig
 from core.types import DiagnosticWarning, Severity, WarningCode
 
 UNIVERSE_DIR = Path(__file__).resolve().parent / "universes"
+
+
+class UniverseDataError(RuntimeError):
+    """유니버스 종가를 하나도 확보하지 못했다.
+
+    조용히 빈 행렬을 돌려주면 RS가 전부 None이 되고, 사용자는 '모든 전략이 게이트에서
+    탈락했다'는 화면만 보게 된다 — 원인이 데이터인지 종목인지 구분할 수 없다.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +119,114 @@ def rs_score(closes: pd.Series, config: UniverseConfig) -> pd.Series:
 def rs_score_frame(closes: pd.DataFrame, config: UniverseConfig) -> pd.DataFrame:
     """유니버스 전체의 RS 원점수. 반환: 날짜 x 티커."""
     return closes.apply(lambda column: rs_score(column, config))
+
+
+# ---------------------------------------------------------------------------
+# 종가 수집 — 진단 파이프라인의 선행 조건
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class UniverseCloses:
+    """유니버스 종가 행렬(날짜 x 티커) + 수집 실패 목록.
+
+    missing이 별도 필드인 이유는 `PanelResult.skipped_tickers`와 같다 — **분모가
+    줄어든 사실이 보이지 않으면 '115종목 대비 순위'라는 말이 거짓이 된다.**
+    상장폐지·티커 변경으로 목록과 현실이 어긋나는 것은 정상이고, 조용히 넘어가는 것이
+    문제다.
+    """
+
+    name: str
+    closes: pd.DataFrame
+    missing: tuple[str, ...]
+    from_cache: bool
+
+    @property
+    def size(self) -> int:
+        return self.closes.shape[1]
+
+
+def _universe_cache_key(name: str) -> str:
+    """유니버스 종가 캐시의 의사(pseudo) 티커 키.
+
+    캐시 무효화 정책(수집 파라미터 변경 / 날짜 경과 / 장중 저장분)을 `data/fetcher.py`
+    한 곳에 두기 위해 그쪽 캐시 함수를 그대로 재사용한다. 정책을 여기 복제하면
+    '오전에 받은 미완성 봉이 종일 고정되는' 버그가 유니버스 경로에만 되살아난다.
+    티커에 쓸 수 없는 문자로 시작해 실제 종목과 충돌하지 않는다.
+    """
+    return f"__universe_{name}"
+
+
+def load_universe_closes(
+    name: str,
+    data_config: DataConfig,
+    exchanges: ExchangeConfig,
+    *,
+    use_cache: bool = True,
+    now: datetime | None = None,
+) -> UniverseCloses:
+    """유니버스 구성종목의 종가 행렬을 확보한다. 캐시 -> (미스 시) 종목별 수집.
+
+    RS 백분위는 '같은 시점 다른 종목들과 비교한 순위'이므로 **유니버스 전체의 종가가
+    있어야 한 종목의 진단이 가능하다.** 이 함수가 없으면 rs_percentile이 None이 되고,
+    세 전략 모두 RS 게이트가 UNAVAILABLE -> AND 게이트 차단 -> 전 종목이
+    REJECTED_BY_GATE가 된다.
+
+    수집 실패한 종목은 예외로 올리지 않고 missing에 모은다 — 티커 하나가 상장폐지됐다고
+    진단 전체가 죽으면 안 되지만, 몇 개가 빠졌는지는 반드시 보여야 한다.
+    """
+    from data.fetcher import DataError, load_ohlcv, read_cache, write_cache
+
+    now = now or datetime.now(UTC)
+    tickers = load_universe_tickers(name)
+    key = _universe_cache_key(name)
+    today_local = now.date()
+
+    if use_cache:
+        cached = read_cache(
+            key, data_config, today_local=today_local, session_complete_now=False
+        )
+        if cached is not None:
+            return UniverseCloses(name, cached, (), from_cache=True)
+
+    columns: dict[str, pd.Series] = {}
+    missing: list[str] = []
+    for ticker in tickers:
+        try:
+            bundle = load_ohlcv(ticker, data_config, exchanges, use_cache=use_cache, now=now)
+        except DataError:
+            missing.append(ticker)
+            continue
+        columns[ticker.upper()] = bundle.ohlcv["close"]
+
+    if not columns:
+        raise UniverseDataError(
+            f"'{name}' 유니버스에서 종가를 하나도 확보하지 못했다 "
+            f"({len(tickers)}종목 전부 실패)"
+        )
+
+    closes = pd.DataFrame(columns).sort_index()
+    closes.index.name = "date"
+
+    if use_cache:
+        write_cache(key, closes, data_config, today_local=today_local, bar_complete=True)
+
+    return UniverseCloses(name, closes, tuple(missing), from_cache=False)
+
+
+def missing_members_warning(name: str, missing: tuple[str, ...], size: int) -> DiagnosticWarning:
+    """수집하지 못한 구성종목이 있다는 사실. 분모가 줄었다는 뜻이다."""
+    return DiagnosticWarning(
+        code=WarningCode.RS_UNIVERSE_MISSING,
+        severity=Severity.WARN,
+        message=(
+            f"'{name}' 유니버스에서 {len(missing)}종목의 종가를 받지 못해 {size}종목으로 "
+            f"백분위를 계산했다 (누락: {', '.join(missing[:5])}"
+            f"{' 외 ' + str(len(missing) - 5) + '종목' if len(missing) > 5 else ''}). "
+            "분모가 줄어든 만큼 순위의 의미도 달라진다"
+        ),
+        field="indicators.rs_percentile",
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3.0",
+  "schema_version": "1.4.0",
   "ticker": "AAPL",
   "as_of": "2024-10-22",
   "generated_at": "2026-08-19T21:00:00Z",
@@ -424,7 +424,41 @@
     ],
     "agreement": "NONE"
   },
-  "risk_plan": null,
+  "risk_plans": {
+    "weinstein": {
+      "entry": 235.5199,
+      "stop": 227.1783,
+      "stop_pct": 3.5418,
+      "r_per_share": 8.3416,
+      "shares": 106,
+      "position_value": 24965.1094,
+      "account_equity": 100000.0,
+      "risk_pct": 0.8842,
+      "risk_amount": 884.2074,
+      "r_levels": [
+        {
+          "multiple": 1.0,
+          "price": 243.8615,
+          "suggested_action": "손절을 진입가(본전)로 올린다"
+        },
+        {
+          "multiple": 2.0,
+          "price": 252.2031,
+          "suggested_action": "포지션 일부를 정리해 남은 리스크를 줄인다"
+        },
+        {
+          "multiple": 3.0,
+          "price": 260.5446,
+          "suggested_action": "추격 손절로 전환한다"
+        }
+      ],
+      "exit_rules": [
+        "손절 227.18 이탈 시 청산 — 1R = 8.34 (3.5%)",
+        "손절은 위로만 옮긴다. 아래로 내리는 것은 계획 변경이 아니라 계획 폐기다",
+        "피벗 235.52을 넘지 못하면 진입 자체가 없다 — 현재가 233.90"
+      ]
+    }
+  },
   "warnings": [
     {
       "code": "RS_UNIVERSE_MISSING",
