@@ -19,3 +19,6 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# CLI가 생성하는 HTML 출력 (--html)
+*.html

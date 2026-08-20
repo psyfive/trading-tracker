@@ -442,6 +442,7 @@ stage / regime / rs_percentile은 하네스가 계산하지 않는다. 백테스
 | `backtest/sweep.py` | 파라미터 스윕 + 학습/홀드아웃 분할 |
 | `render/cli.py` | rich 렌더러 |
 | `render/json_out.py` | 프론트엔드용 직렬화 (유일한 진입점) |
+| `render/html_out.py` | 자기완결 HTML 한 장 (`--html`). 서버 없이 브라우저로 본다 |
 | `strategies/dummy.py` | 하네스 검증용 더미 3종. 매매 판단용이 아니다 |
 | `examples/*.json` | **실제 전략 출력**으로 생성한 예시 리포트 (`scripts/make_examples.py`) |
 | `docs/review_phase0-2.md` | Phase 0~2 비판적 리뷰와 조치 내역 |
@@ -502,6 +503,10 @@ python main.py AAPL --equity 100000
 
 ```bash
 python main.py --scan us_large --top 20
+```
+
+```bash
+python main.py --scan us_large --html watchlist.html
 ```
 
 ```bash

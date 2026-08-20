@@ -43,6 +43,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -77,6 +78,7 @@ from data.universe import (
 )
 from regime.market import classify_regime, classify_stage
 from render.cli import render_report, render_watchlist
+from render.html_out import diagnosis_html, watchlist_html
 from render.json_out import to_json, watchlist_to_json
 from risk.planner import build_risk_plans
 from strategies.base import Strategy
@@ -85,6 +87,11 @@ from strategies.registry import ALL, UnknownStrategyError, build_strategies
 # 수집·스캔 진행 알림. (라벨, 완료 수, 전체 수). data 레이어가 rich를 모르게 하려고
 # 콜백으로 뺐다 — 화면 그리기는 CLI의 몫이다.
 ProgressFn = Callable[[str, int, int], None]
+
+# HTML에 진단 상세까지 심을 상위 종목 수. 전부 심으면 116종목에 1.7MB가 되고,
+# 실제로 펼쳐 보는 것은 위쪽 몇 개다. 나머지 행은 요약만 보이고 "개별 진단하면
+# 같은 판정이 나온다"고 안내한다 — 없는 것을 있는 척하지 않는다.
+HTML_DETAIL_LIMIT = 15
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -120,6 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--verdict",
         default=None,
         help="스캔 결과를 판정으로 거른다. 예: --verdict BUY,WATCH",
+    )
+    parser.add_argument(
+        "--html",
+        metavar="PATH",
+        default=None,
+        help="결과를 브라우저로 볼 수 있는 HTML 한 장으로 저장한다. 예: --html watchlist.html",
     )
     return parser
 
@@ -359,6 +372,7 @@ def scan(
     use_cache: bool = True,
     now: datetime | None = None,
     progress: ProgressFn | None = None,
+    on_report: Callable[[DiagnosisReport], None] | None = None,
 ) -> WatchlistReport:
     """유니버스 전체를 진단해 워치리스트로 조립한다.
 
@@ -367,6 +381,9 @@ def scan(
 
     한 종목의 수집 실패는 스캔을 멈추지 않는다 — `failed`에 이유와 함께 남는다.
     조용히 빠지면 '116종목 스캔'이라는 말이 거짓이 된다.
+
+    on_report는 종목별 **진단 리포트 원본**을 넘겨받는 훅이다. 워치리스트는 요약이라
+    상세를 버리는데, HTML 출력처럼 상세가 필요한 호출부가 다시 진단하지 않아도 되게 한다.
     """
     exchange = {
         name: code for code, name in config.universe.universe_by_exchange
@@ -389,16 +406,12 @@ def scan(
         if progress is not None:
             progress(f"진단 {ticker}", index, len(members))
         try:
-            reports.append(
-                diagnose(
-                    ticker,
-                    config,
-                    strategies,
-                    use_cache=use_cache,
-                    now=now,
-                    market=market,
-                )
+            report = diagnose(
+                ticker, config, strategies, use_cache=use_cache, now=now, market=market
             )
+            reports.append(report)
+            if on_report is not None:
+                on_report(report)
         except DataError as error:
             failed.append(ScanFailure(ticker=ticker, reason=str(error)))
 
@@ -447,6 +460,15 @@ def _cli_progress(console_width: int = 0) -> ProgressFn:
     return report
 
 
+def _write_html(path: str, html: str) -> None:
+    """HTML을 저장하고 어디에 저장했는지 말한다. 조용히 끝나면 사용자가 못 찾는다."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(html, encoding="utf-8")
+    print(f"HTML 저장: {target.resolve()}", file=sys.stderr)
+    print("  브라우저로 열면 된다 (서버 불필요 — 데이터가 파일 안에 있다)", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 진입점. 데이터 문제는 사용자 메시지로, 그 외 예외는 그대로 올린다."""
     args = build_parser().parse_args(argv)
@@ -468,14 +490,25 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.scan:
+            collected: dict[str, DiagnosisReport] = {}
             watchlist = scan(
                 args.scan,
                 config,
                 strategies,
                 use_cache=not args.no_cache,
                 progress=None if args.json else _cli_progress(),
+                on_report=(
+                    None if not args.html else lambda r: collected.__setitem__(r.ticker, r)
+                ),
             )
-            if args.json:
+            if args.html:
+                details = {
+                    entry.ticker: collected[entry.ticker]
+                    for entry in watchlist.entries[:HTML_DETAIL_LIMIT]
+                    if entry.ticker in collected
+                }
+                _write_html(args.html, watchlist_html(watchlist, details))
+            elif args.json:
                 print(watchlist_to_json(watchlist))
             else:
                 render_watchlist(watchlist, top=args.top, verdicts=verdict_filter)
@@ -489,7 +522,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"데이터 오류: {error}", file=sys.stderr)
         return 1
 
-    if args.json:
+    if args.html:
+        _write_html(args.html, diagnosis_html(report))
+    elif args.json:
         print(to_json(report))
     else:
         render_report(report)
